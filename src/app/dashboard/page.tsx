@@ -1,5 +1,4 @@
-import { LeadDetails } from '@/components/lead-details'
-import { LeadStageSelect } from '@/components/lead-stage-select'
+import { CrmPipeline } from '@/components/crm-pipeline'
 import { NewLeadForm } from '@/components/new-lead-form'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -65,6 +64,7 @@ export default async function DashboardPage() {
 
   const allLeads = leads ?? []
   const allStages = stages ?? []
+  const allHistory = history ?? []
 
   const wonStageIds = new Set(
     allStages.filter((stage) => stage.is_won).map((stage) => stage.id)
@@ -228,117 +228,24 @@ export default async function DashboardPage() {
           </section>
 
           <section>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Pipeline</h2>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Mova os leads entre as etapas do processo comercial.
+                  Arraste os cards entre as etapas ou use o seletor dentro do lead.
                 </p>
               </div>
+
+              <p className="text-xs text-zinc-600">
+                Role horizontalmente para visualizar todas as etapas
+              </p>
             </div>
 
-            <div className="flex gap-4 overflow-x-auto pb-6">
-              {allStages.map((stage) => {
-                const stageLeads = allLeads.filter(
-                  (lead) => lead.stage_id === stage.id
-                )
-
-                return (
-                  <section
-                    key={stage.id}
-                    className="min-w-[300px] max-w-[300px] rounded-2xl border border-zinc-800 bg-zinc-900/55 p-4"
-                  >
-                    <div className="mb-4 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`h-2 w-2 rounded-full ${
-                            stage.is_won
-                              ? 'bg-emerald-500'
-                              : stage.is_lost
-                                ? 'bg-red-500'
-                                : 'bg-purple-500'
-                          }`}
-                        />
-                        <h3 className="text-sm font-semibold text-zinc-200">
-                          {stage.name}
-                        </h3>
-                      </div>
-
-                      <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-400">
-                        {stageLeads.length}
-                      </span>
-                    </div>
-
-                    <div className="space-y-3">
-                      {stageLeads.length === 0 && (
-                        <div className="rounded-xl border border-dashed border-zinc-800 px-4 py-8 text-center text-sm text-zinc-600">
-                          Nenhum lead
-                        </div>
-                      )}
-
-                      {stageLeads.map((lead) => {
-                        const leadHistory =
-                          history?.filter((item) => item.lead_id === lead.id) ?? []
-
-                        return (
-                          <div
-                            key={lead.id}
-                            className="rounded-xl border border-zinc-800 bg-zinc-950/90 p-4 shadow-sm transition hover:border-zinc-700"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-zinc-100">
-                                  {lead.name}
-                                </p>
-                                {lead.phone && (
-                                  <p className="mt-1 truncate text-xs text-zinc-500">
-                                    {lead.phone}
-                                  </p>
-                                )}
-                              </div>
-
-                              {lead.source && (
-                                <span className="max-w-[100px] truncate rounded-md bg-purple-500/10 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-purple-300">
-                                  {lead.source}
-                                </span>
-                              )}
-                            </div>
-
-                            {(lead.campaign || lead.estimated_value != null) && (
-                              <div className="mt-4 border-t border-zinc-800/80 pt-3">
-                                {lead.campaign && (
-                                  <p className="truncate text-xs text-zinc-600">
-                                    {lead.campaign}
-                                  </p>
-                                )}
-
-                                {lead.estimated_value != null && (
-                                  <p className="mt-1 text-sm font-medium text-zinc-300">
-                                    {formatCurrency(Number(lead.estimated_value))}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-
-                            <LeadStageSelect
-                              leadId={lead.id}
-                              currentStageId={lead.stage_id}
-                              stages={allStages}
-                            />
-
-                            <LeadDetails
-                              lead={lead}
-                              stages={allStages}
-                              history={leadHistory}
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </section>
-                )
-              })}
-            </div>
+            <CrmPipeline
+              stages={allStages}
+              leads={allLeads}
+              history={allHistory}
+            />
           </section>
         </div>
       </main>
