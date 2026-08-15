@@ -1,7 +1,17 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  allowedDevOrigins: [
+    'humble-lamp-qw7j5wjvv9v2jx6-3000.app.github.dev',
+  ],
 
-export default nextConfig;
+  experimental: {
+    serverActions: {
+      allowedOrigins: [
+        'humble-lamp-qw7j5wjvv9v2jx6-3000.app.github.dev',
+      ],
+    },
+  },
+}
+
+export default nextConfig
