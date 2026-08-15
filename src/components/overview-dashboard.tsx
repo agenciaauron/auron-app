@@ -33,7 +33,7 @@ type Props = {
   history: HistoryItem[]
 }
 
-type Period = '7d' | '30d' | 'month'
+type Period = '7d' | '30d' | 'month' | 'custom'
 type Metric = 'leads' | 'qualified' | 'meetings' | 'sales' | 'lost' | 'revenue'
 type StageMetric = 'qualified' | 'meetings' | 'sales' | 'lost'
 
@@ -64,6 +64,12 @@ function startOfDay(date: Date) {
   return result
 }
 
+function endOfDay(date: Date) {
+  const result = new Date(date)
+  result.setHours(23, 59, 59, 999)
+  return result
+}
+
 function localDateKey(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -71,8 +77,72 @@ function localDateKey(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-function getPeriodRange(period: Period) {
+function dateToInputValue(date: Date) {
+  return localDateKey(date)
+}
+
+function parseDateInput(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+
+  if (!year || !month || !day) return null
+
+  return new Date(year, month - 1, day)
+}
+
+function formatRangeLabel(start: Date, end: Date) {
+  const sameMonth =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth()
+
+  if (sameMonth) {
+    return `${start.toLocaleDateString('pt-BR', { day: '2-digit' })}–${end.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+    })}`
+  }
+
+  return `${start.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+  })} – ${end.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+  })}`
+}
+
+function getPeriodRange(period: Period, customStart: string, customEnd: string) {
   const now = new Date()
+
+  if (period === 'custom') {
+    const parsedStart = parseDateInput(customStart)
+    const parsedEnd = parseDateInput(customEnd)
+
+    const fallbackStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const fallbackEnd = now
+
+    const firstDate = parsedStart ?? fallbackStart
+    const secondDate = parsedEnd ?? fallbackEnd
+
+    const start = startOfDay(firstDate <= secondDate ? firstDate : secondDate)
+    const end = endOfDay(firstDate <= secondDate ? secondDate : firstDate)
+
+    const dayCount =
+      Math.floor((startOfDay(end).getTime() - start.getTime()) / 86400000) + 1
+
+    const prevEnd = new Date(start.getTime() - 1)
+    const prevStart = startOfDay(
+      new Date(start.getTime() - dayCount * 86400000)
+    )
+
+    return {
+      start,
+      end,
+      prevStart,
+      prevEnd,
+      currentLabel: formatRangeLabel(start, end),
+      previousLabel: formatRangeLabel(prevStart, prevEnd),
+    }
+  }
 
   if (period === 'month') {
     const start = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -145,10 +215,18 @@ function Comparison({ current, previous }: { current: number; previous: number }
 }
 
 export function OverviewDashboard({ leads, stages, history }: Props) {
+  const now = new Date()
   const [period, setPeriod] = useState<Period>('month')
   const [metric, setMetric] = useState<Metric>('leads')
+  const [customStart, setCustomStart] = useState(
+    dateToInputValue(new Date(now.getFullYear(), now.getMonth(), 1))
+  )
+  const [customEnd, setCustomEnd] = useState(dateToInputValue(now))
 
-  const range = useMemo(() => getPeriodRange(period), [period])
+  const range = useMemo(
+    () => getPeriodRange(period, customStart, customEnd),
+    [period, customStart, customEnd]
+  )
 
   const stageMap = useMemo(
     () => new Map(stages.map((stage) => [stage.id, stage])),
@@ -294,7 +372,7 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
 
   return (
     <>
-      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-sm font-medium text-purple-400">Visão geral</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">Desempenho comercial</h1>
@@ -303,15 +381,45 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
           </p>
         </div>
 
-        <select
-          value={period}
-          onChange={(event) => setPeriod(event.target.value as Period)}
-          className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-200 outline-none"
-        >
-          <option value="7d">Últimos 7 dias</option>
-          <option value="30d">Últimos 30 dias</option>
-          <option value="month">Este mês</option>
-        </select>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          {period === 'custom' && (
+            <>
+              <label className="text-xs text-zinc-500">
+                <span className="mb-1 block">De</span>
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(event) => setCustomStart(event.target.value)}
+                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200 outline-none"
+                />
+              </label>
+
+              <label className="text-xs text-zinc-500">
+                <span className="mb-1 block">Até</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(event) => setCustomEnd(event.target.value)}
+                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200 outline-none"
+                />
+              </label>
+            </>
+          )}
+
+          <label className="text-xs text-zinc-500">
+            <span className="mb-1 block">Período</span>
+            <select
+              value={period}
+              onChange={(event) => setPeriod(event.target.value as Period)}
+              className="min-w-[170px] rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-200 outline-none"
+            >
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d">Últimos 30 dias</option>
+              <option value="month">Este mês</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
