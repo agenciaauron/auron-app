@@ -21,6 +21,11 @@ type Point = {
   y: number
 }
 
+type TooltipPosition = {
+  x: number
+  y: number
+}
+
 const width = 1000
 const height = 320
 const paddingLeft = 56
@@ -80,6 +85,7 @@ export function InteractivePerformanceChart({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+  const [tooltipPosition, setTooltipPosition] = useState<TooltipPosition | null>(null)
 
   const pointCount = Math.max(currentSeries.length, previousSeries.length, 2)
   const maxValue = Math.max(
@@ -126,12 +132,33 @@ export function InteractivePerformanceChart({
   function handleMouseMove(event: MouseEvent<SVGSVGElement>) {
     if (!currentSeries.length) return
 
-    const rect = event.currentTarget.getBoundingClientRect()
-    const relativeX = ((event.clientX - rect.left) / rect.width) * width
-    const normalized = (relativeX - paddingLeft) / plotWidth
+    const svg = event.currentTarget
+    const screenMatrix = svg.getScreenCTM()
+
+    if (!screenMatrix) return
+
+    const pointer = svg.createSVGPoint()
+    pointer.x = event.clientX
+    pointer.y = event.clientY
+
+    const svgPointer = pointer.matrixTransform(screenMatrix.inverse())
+    const normalized = (svgPointer.x - paddingLeft) / plotWidth
     const index = Math.round(normalized * Math.max(currentSeries.length - 1, 0))
 
     setHoveredIndex(clamp(index, 0, currentSeries.length - 1))
+
+    const containerRect = containerRef.current?.getBoundingClientRect()
+    if (containerRect) {
+      setTooltipPosition({
+        x: event.clientX - containerRect.left,
+        y: event.clientY - containerRect.top,
+      })
+    }
+  }
+
+  function handleMouseLeave() {
+    setHoveredIndex(null)
+    setTooltipPosition(null)
   }
 
   const hoveredPoint = hoveredIndex === null ? null : currentPoints[hoveredIndex]
@@ -160,7 +187,7 @@ export function InteractivePerformanceChart({
           role="img"
           aria-label={`Gráfico de ${metricLabel}`}
           onMouseMove={handleMouseMove}
-          onMouseLeave={() => setHoveredIndex(null)}
+          onMouseLeave={handleMouseLeave}
         >
           <defs>
             <linearGradient id="auron-chart-area" x1="0" x2="0" y1="0" y2="1">
@@ -297,16 +324,16 @@ export function InteractivePerformanceChart({
           })}
         </svg>
 
-        {hoveredPoint && hoveredData && (
+        {hoveredPoint && hoveredData && tooltipPosition && (
           <div
             className="pointer-events-none absolute z-10 min-w-[150px] rounded-xl border border-zinc-700 bg-zinc-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
             style={{
-              left: `${(hoveredPoint.x / width) * 100}%`,
-              top: `${(hoveredPoint.y / height) * 100}%`,
+              left: tooltipPosition.x,
+              top: tooltipPosition.y,
               transform:
-                hoveredPoint.x > width * 0.78
-                  ? 'translate(-108%, -115%)'
-                  : 'translate(12%, -115%)',
+                tooltipPosition.x > (containerRef.current?.clientWidth ?? 0) * 0.78
+                  ? 'translate(-108%, -110%)'
+                  : 'translate(14px, -110%)',
             }}
           >
             <p className="text-xs text-zinc-500">
