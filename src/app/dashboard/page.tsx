@@ -1,3 +1,4 @@
+import { LeadDetails } from '@/components/lead-details'
 import { LeadStageSelect } from '@/components/lead-stage-select'
 import { NewLeadForm } from '@/components/new-lead-form'
 import { redirect } from 'next/navigation'
@@ -42,32 +43,32 @@ export default async function DashboardPage() {
 
   const { data: leads } = await supabase
     .from('leads')
-    .select('id, name, phone, source, stage_id, estimated_value, sale_value')
+    .select(
+      'id, name, phone, email, source, campaign, notes, stage_id, estimated_value, sale_value'
+    )
     .eq('company_id', membership.company_id)
 
   return (
     <main className="min-h-screen bg-zinc-950 p-8 text-white">
-
       <div className="mb-8 flex items-end justify-between">
-  <div>
-    <p className="text-sm text-purple-400">
-      Auron App
-    </p>
+        <div>
+          <p className="text-sm text-purple-400">
+            Auron App
+          </p>
 
-    <h1 className="mt-1 text-3xl font-semibold">
-      {company?.name}
-    </h1>
+          <h1 className="mt-1 text-3xl font-semibold">
+            {company?.name}
+          </h1>
 
-    <p className="mt-2 text-zinc-400">
-      Funil comercial
-    </p>
-  </div>
+          <p className="mt-2 text-zinc-400">
+            Funil comercial
+          </p>
+        </div>
 
-  <NewLeadForm />
-</div>
+        <NewLeadForm />
+      </div>
 
       <div className="flex gap-4 overflow-x-auto pb-6">
-
         {stages?.map((stage) => {
           const stageLeads =
             leads?.filter((lead) => lead.stage_id === stage.id) ?? []
@@ -88,7 +89,6 @@ export default async function DashboardPage() {
               </div>
 
               <div className="space-y-3">
-
                 {stageLeads.length === 0 && (
                   <div className="rounded-lg border border-dashed border-zinc-700 p-4 text-center text-sm text-zinc-500">
                     Nenhum lead
@@ -123,19 +123,23 @@ export default async function DashboardPage() {
                         })}
                       </p>
                     )}
+
                     <LeadStageSelect
-  leadId={lead.id}
-  currentStageId={lead.stage_id}
-  stages={stages ?? []}
-/>
+                      leadId={lead.id}
+                      currentStageId={lead.stage_id}
+                      stages={stages ?? []}
+                    />
+
+                    <LeadDetails
+                      lead={lead}
+                      stages={stages ?? []}
+                    />
                   </div>
                 ))}
-
               </div>
             </section>
           )
         })}
-
       </div>
     </main>
   )
