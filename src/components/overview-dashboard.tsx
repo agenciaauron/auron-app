@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { InteractivePerformanceChart } from '@/components/interactive-performance-chart'
 
 type Stage = {
   id: string
@@ -283,43 +284,13 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
 
   const currentSeries = makeDailySeries(currentEvents, range.start, range.end)
   const previousSeries = makeDailySeries(previousEvents, range.prevStart, range.prevEnd)
-  const pointCount = Math.max(currentSeries.length, previousSeries.length, 2)
-  const maxValue = Math.max(
-    1,
-    ...currentSeries.map((item) => item.value),
-    ...previousSeries.map((item) => item.value)
-  )
-
-  const width = 1000
-  const height = 300
-  const paddingX = 44
-  const paddingTop = 24
-  const paddingBottom = 40
-  const plotHeight = height - paddingTop - paddingBottom
-  const plotWidth = width - paddingX * 2
-
-  function points(series: Array<{ value: number }>) {
-    return series
-      .map((item, index) => {
-        const x = paddingX + (index / Math.max(pointCount - 1, 1)) * plotWidth
-        const y = paddingTop + plotHeight - (item.value / maxValue) * plotHeight
-        return `${x},${y}`
-      })
-      .join(' ')
-  }
 
   const selectedMetricLabel = metricOptions.find((item) => item.value === metric)?.label ?? ''
   const currentTotal = totalInRange(metric, range.start, range.end)
   const previousTotal = totalInRange(metric, range.prevStart, range.prevEnd)
-  const metricFormatter = metric === 'revenue' ? formatCurrency : (value: number) => value.toLocaleString('pt-BR')
-
-  const xLabels = currentSeries.length > 0
-    ? [
-        currentSeries[0],
-        currentSeries[Math.floor((currentSeries.length - 1) / 2)],
-        currentSeries[currentSeries.length - 1],
-      ]
-    : []
+  const metricFormatter = metric === 'revenue'
+    ? formatCurrency
+    : (value: number) => value.toLocaleString('pt-BR')
 
   return (
     <>
@@ -395,74 +366,14 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
           </select>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-5 text-xs">
-          <div className="flex items-center gap-2 text-zinc-400">
-            <span className="h-0.5 w-6 bg-purple-500" />
-            {range.currentLabel}
-          </div>
-          <div className="flex items-center gap-2 text-zinc-500">
-            <span className="w-6 border-t border-dashed border-zinc-500" />
-            {range.previousLabel}
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-950/60 p-3">
-          <svg viewBox={`0 0 ${width} ${height}`} className="h-[290px] w-full" role="img" aria-label={`Gráfico de ${selectedMetricLabel}`}>
-            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-              const y = paddingTop + plotHeight * ratio
-              return (
-                <line
-                  key={ratio}
-                  x1={paddingX}
-                  x2={width - paddingX}
-                  y1={y}
-                  y2={y}
-                  stroke="currentColor"
-                  className="text-zinc-800"
-                  strokeWidth="1"
-                />
-              )
-            })}
-
-            {previousSeries.length > 0 && (
-              <polyline
-                fill="none"
-                stroke="currentColor"
-                className="text-zinc-500"
-                strokeWidth="3"
-                strokeDasharray="8 8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={points(previousSeries)}
-              />
-            )}
-
-            {currentSeries.length > 0 && (
-              <polyline
-                fill="none"
-                stroke="currentColor"
-                className="text-purple-500"
-                strokeWidth="4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={points(currentSeries)}
-              />
-            )}
-
-            <text x={paddingX} y={18} fill="currentColor" className="text-zinc-600" fontSize="12">
-              {metric === 'revenue' ? formatCurrency(maxValue) : maxValue.toLocaleString('pt-BR')}
-            </text>
-            <text x={paddingX} y={height - 8} fill="currentColor" className="text-zinc-600" fontSize="12">
-              {xLabels[0]?.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-            </text>
-            <text x={width / 2} y={height - 8} textAnchor="middle" fill="currentColor" className="text-zinc-600" fontSize="12">
-              {xLabels[1]?.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-            </text>
-            <text x={width - paddingX} y={height - 8} textAnchor="end" fill="currentColor" className="text-zinc-600" fontSize="12">
-              {xLabels[2]?.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-            </text>
-          </svg>
-        </div>
+        <InteractivePerformanceChart
+          currentSeries={currentSeries}
+          previousSeries={previousSeries}
+          currentLabel={range.currentLabel}
+          previousLabel={range.previousLabel}
+          metricLabel={selectedMetricLabel}
+          currency={metric === 'revenue'}
+        />
       </section>
     </>
   )
