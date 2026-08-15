@@ -42,7 +42,7 @@ export default async function DashboardPage() {
 
   const { data: leads } = await supabase
     .from('leads')
-    .select('id, stage_id, estimated_value, sale_value, created_at')
+    .select('id, stage_id, sale_value, created_at')
     .eq('company_id', membership.company_id)
 
   const { data: history } = await supabase
