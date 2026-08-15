@@ -177,163 +177,166 @@ export function InteractivePerformanceChart({
         </div>
       </div>
 
-      <div
-        ref={containerRef}
-        className="relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950/70 px-2 py-3"
-      >
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          className="h-[320px] w-full select-none"
-          role="img"
-          aria-label={`Gráfico de ${metricLabel}`}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-        >
-          <defs>
-            <linearGradient id="auron-chart-area" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#a855f7" stopOpacity="0.24" />
-              <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-
-          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-            const y = paddingTop + plotHeight * ratio
-            return (
-              <line
-                key={ratio}
-                x1={paddingLeft}
-                x2={width - paddingRight}
-                y1={y}
-                y2={y}
-                stroke="currentColor"
-                className="text-zinc-800/80"
-                strokeWidth="1"
-              />
-            )
-          })}
-
-          <text
-            x={paddingLeft - 10}
-            y={paddingTop + 4}
-            textAnchor="end"
-            fill="currentColor"
-            className="text-zinc-600"
-            fontSize="12"
+      <div ref={containerRef} className="relative">
+        <div className="overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950/70 px-2 py-3">
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="h-[320px] w-full select-none"
+            role="img"
+            aria-label={`Gráfico de ${metricLabel}`}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
           >
-            {formatValue(maxValue, currency)}
-          </text>
+            <defs>
+              <linearGradient id="auron-chart-area" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#a855f7" stopOpacity="0.24" />
+                <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
+              </linearGradient>
+            </defs>
 
-          <text
-            x={paddingLeft - 10}
-            y={paddingTop + plotHeight + 4}
-            textAnchor="end"
-            fill="currentColor"
-            className="text-zinc-600"
-            fontSize="12"
-          >
-            0
-          </text>
+            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+              const y = paddingTop + plotHeight * ratio
+              return (
+                <line
+                  key={ratio}
+                  x1={paddingLeft}
+                  x2={width - paddingRight}
+                  y1={y}
+                  y2={y}
+                  stroke="currentColor"
+                  className="text-zinc-800/80"
+                  strokeWidth="1"
+                />
+              )
+            })}
 
-          {areaPath && <path d={areaPath} fill="url(#auron-chart-area)" />}
-
-          {previousPath && (
-            <path
-              d={previousPath}
-              fill="none"
-              stroke="currentColor"
+            <text
+              x={paddingLeft - 10}
+              y={paddingTop + 4}
+              textAnchor="end"
+              fill="currentColor"
               className="text-zinc-600"
-              strokeWidth="2.5"
-              strokeDasharray="7 8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
+              fontSize="12"
+            >
+              {formatValue(maxValue, currency)}
+            </text>
 
-          {currentPath && (
-            <path
-              d={currentPath}
-              fill="none"
-              stroke="#a855f7"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
+            <text
+              x={paddingLeft - 10}
+              y={paddingTop + plotHeight + 4}
+              textAnchor="end"
+              fill="currentColor"
+              className="text-zinc-600"
+              fontSize="12"
+            >
+              0
+            </text>
 
-          {currentPoints.map((point, index) => {
-            const active = hoveredIndex === index
-            const hasValue = currentSeries[index]?.value > 0
+            {areaPath && <path d={areaPath} fill="url(#auron-chart-area)" />}
 
-            return (
-              <g key={currentSeries[index]?.date.toISOString() ?? index}>
-                <circle
-                  cx={point.x}
-                  cy={point.y}
-                  r={active ? 9 : hasValue ? 5 : 3}
-                  fill={active ? '#a855f7' : '#09090b'}
-                  stroke="#a855f7"
-                  strokeWidth={active ? 4 : 2}
-                  opacity={hasValue || active ? 1 : 0.55}
-                  className="transition-all"
-                />
-                <circle
-                  cx={point.x}
-                  cy={point.y}
-                  r="14"
-                  fill="transparent"
-                />
-              </g>
-            )
-          })}
-
-          {hoveredPoint && (
-            <line
-              x1={hoveredPoint.x}
-              x2={hoveredPoint.x}
-              y1={paddingTop}
-              y2={paddingTop + plotHeight}
-              stroke="#71717a"
-              strokeWidth="1"
-              strokeDasharray="4 6"
-              opacity="0.6"
-            />
-          )}
-
-          {labelIndexes.map((index) => {
-            const item = currentSeries[index]
-            if (!item) return null
-
-            const anchor = index === 0 ? 'start' : index === currentSeries.length - 1 ? 'end' : 'middle'
-
-            return (
-              <text
-                key={item.date.toISOString()}
-                x={xForIndex(index)}
-                y={height - 10}
-                textAnchor={anchor}
-                fill="currentColor"
+            {previousPath && (
+              <path
+                d={previousPath}
+                fill="none"
+                stroke="currentColor"
                 className="text-zinc-600"
-                fontSize="12"
-              >
-                {item.date.toLocaleDateString('pt-BR', {
-                  day: '2-digit',
-                  month: 'short',
-                })}
-              </text>
-            )
-          })}
-        </svg>
+                strokeWidth="2.5"
+                strokeDasharray="7 8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+
+            {currentPath && (
+              <path
+                d={currentPath}
+                fill="none"
+                stroke="#a855f7"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+
+            {currentPoints.map((point, index) => {
+              const active = hoveredIndex === index
+              const hasValue = currentSeries[index]?.value > 0
+
+              return (
+                <g key={currentSeries[index]?.date.toISOString() ?? index}>
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r={active ? 9 : hasValue ? 5 : 3}
+                    fill={active ? '#a855f7' : '#09090b'}
+                    stroke="#a855f7"
+                    strokeWidth={active ? 4 : 2}
+                    opacity={hasValue || active ? 1 : 0.55}
+                    className="transition-all"
+                  />
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r="14"
+                    fill="transparent"
+                  />
+                </g>
+              )
+            })}
+
+            {hoveredPoint && (
+              <line
+                x1={hoveredPoint.x}
+                x2={hoveredPoint.x}
+                y1={paddingTop}
+                y2={paddingTop + plotHeight}
+                stroke="#71717a"
+                strokeWidth="1"
+                strokeDasharray="4 6"
+                opacity="0.6"
+              />
+            )}
+
+            {labelIndexes.map((index) => {
+              const item = currentSeries[index]
+              if (!item) return null
+
+              const anchor = index === 0 ? 'start' : index === currentSeries.length - 1 ? 'end' : 'middle'
+
+              return (
+                <text
+                  key={item.date.toISOString()}
+                  x={xForIndex(index)}
+                  y={height - 10}
+                  textAnchor={anchor}
+                  fill="currentColor"
+                  className="text-zinc-600"
+                  fontSize="12"
+                >
+                  {item.date.toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: 'short',
+                  })}
+                </text>
+              )
+            })}
+          </svg>
+        </div>
 
         {hoveredPoint && hoveredData && tooltipPosition && (
           <div
-            className="pointer-events-none absolute z-10 min-w-[150px] rounded-xl border border-zinc-700 bg-zinc-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
+            className="pointer-events-none absolute z-30 min-w-[150px] rounded-xl border border-zinc-700 bg-zinc-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
             style={{
               left: tooltipPosition.x,
               top: tooltipPosition.y,
               transform:
                 tooltipPosition.x > (containerRef.current?.clientWidth ?? 0) * 0.78
-                  ? 'translate(-108%, -110%)'
-                  : 'translate(14px, -110%)',
+                  ? tooltipPosition.y < 90
+                    ? 'translate(-108%, 16px)'
+                    : 'translate(-108%, -110%)'
+                  : tooltipPosition.y < 90
+                    ? 'translate(14px, 16px)'
+                    : 'translate(14px, -110%)',
             }}
           >
             <p className="text-xs text-zinc-500">
