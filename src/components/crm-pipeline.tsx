@@ -22,7 +22,6 @@ type Lead = {
   campaign: string | null
   notes: string | null
   stage_id: string | null
-  estimated_value: number | string | null
   sale_value: number | string | null
 }
 
@@ -41,8 +40,8 @@ type Props = {
   history: HistoryItem[]
 }
 
-function formatCurrency(value: number) {
-  return value.toLocaleString('pt-BR', {
+function formatCurrency(value: number | string) {
+  return Number(value).toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   })
@@ -228,7 +227,7 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                       )}
                     </div>
 
-                    {(lead.campaign || lead.estimated_value != null) && (
+                    {(lead.campaign || (stage.is_won && lead.sale_value != null)) && (
                       <div className="mt-4 border-t border-zinc-800/80 pt-3">
                         {lead.campaign && (
                           <p className="truncate text-xs text-zinc-600">
@@ -236,9 +235,9 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                           </p>
                         )}
 
-                        {lead.estimated_value != null && (
-                          <p className="mt-1 text-sm font-medium text-zinc-300">
-                            {formatCurrency(Number(lead.estimated_value))}
+                        {stage.is_won && lead.sale_value != null && (
+                          <p className="mt-1 text-sm font-medium text-emerald-300">
+                            Venda: {formatCurrency(lead.sale_value)}
                           </p>
                         )}
                       </div>
