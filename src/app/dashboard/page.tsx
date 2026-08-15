@@ -1,3 +1,4 @@
+import { LeadStageSelect } from '@/components/lead-stage-select'
 import { NewLeadForm } from '@/components/new-lead-form'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -122,6 +123,11 @@ export default async function DashboardPage() {
                         })}
                       </p>
                     )}
+                    <LeadStageSelect
+  leadId={lead.id}
+  currentStageId={lead.stage_id}
+  stages={stages ?? []}
+/>
                   </div>
                 ))}
 
