@@ -21,17 +21,47 @@ type Lead = {
   sale_value: number | string | null
 }
 
+type HistoryItem = {
+  id: string
+  event_type: 'created' | 'stage_changed'
+  from_stage_id: string | null
+  to_stage_id: string | null
+  created_at: string
+}
+
 type Props = {
   lead: Lead
   stages: Stage[]
+  history: HistoryItem[]
 }
 
-export function LeadDetails({ lead, stages }: Props) {
+export function LeadDetails({ lead, stages, history }: Props) {
   const router = useRouter()
 
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  function getStageName(stageId: string | null) {
+    if (!stageId) return 'Etapa não identificada'
+
+    return stages.find((stage) => stage.id === stageId)?.name ?? 'Etapa não identificada'
+  }
+
+  function getHistoryText(item: HistoryItem) {
+    if (item.event_type === 'created') {
+      return 'Lead adicionado ao CRM'
+    }
+
+    return `Movido de ${getStageName(item.from_stage_id)} para ${getStageName(item.to_stage_id)}`
+  }
+
+  function formatDate(value: string) {
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(value))
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -197,6 +227,41 @@ export function LeadDetails({ lead, stages }: Props) {
             {loading ? 'Salvando...' : 'Salvar alterações'}
           </button>
         </form>
+
+        <div className="mt-8 border-t border-zinc-800 pt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="font-semibold">
+              Histórico
+            </h3>
+
+            <span className="text-xs text-zinc-500">
+              {history.length} {history.length === 1 ? 'evento' : 'eventos'}
+            </span>
+          </div>
+
+          {history.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-zinc-700 p-4 text-sm text-zinc-500">
+              Nenhum histórico registrado ainda.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {history.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950 p-4"
+                >
+                  <p className="text-sm text-zinc-200">
+                    {getHistoryText(item)}
+                  </p>
+
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {formatDate(item.created_at)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
