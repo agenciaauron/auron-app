@@ -44,7 +44,7 @@ export default async function LeadsPage() {
   const { data: leads } = await supabase
     .from('leads')
     .select(
-      'id, name, phone, email, source, campaign, notes, stage_id, estimated_value, sale_value, created_at'
+      'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at'
     )
     .eq('company_id', membership.company_id)
     .order('created_at', { ascending: false })
