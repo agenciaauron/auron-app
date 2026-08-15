@@ -15,8 +15,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-
-  const { name, phone, email, source, campaign, estimatedValue } = body
+  const { name, phone, email, source, campaign } = body
 
   if (!name?.trim()) {
     return NextResponse.json(
@@ -65,9 +64,6 @@ export async function POST(request: Request) {
       email: email?.trim() || null,
       source: source?.trim() || null,
       campaign: campaign?.trim() || null,
-      estimated_value: estimatedValue
-        ? Number(estimatedValue)
-        : null,
     })
 
   if (error) {
