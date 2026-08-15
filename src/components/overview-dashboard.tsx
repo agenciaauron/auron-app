@@ -14,7 +14,6 @@ type Stage = {
 type Lead = {
   id: string
   stage_id: string | null
-  estimated_value: number | string | null
   sale_value: number | string | null
   created_at: string
 }
@@ -282,7 +281,7 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
 
         return {
           date: new Date(item.created_at),
-          value: Number(lead?.sale_value ?? lead?.estimated_value ?? 0),
+          value: Number(lead?.sale_value ?? 0),
         }
       })
     }
