@@ -23,7 +23,7 @@ type Lead = {
 
 type HistoryItem = {
   id: string
-  event_type: 'created' | 'stage_changed'
+  event_type: string
   from_stage_id: string | null
   to_stage_id: string | null
   created_at: string
@@ -53,7 +53,11 @@ export function LeadDetails({ lead, stages, history }: Props) {
       return 'Lead adicionado ao CRM'
     }
 
-    return `Movido de ${getStageName(item.from_stage_id)} para ${getStageName(item.to_stage_id)}`
+    if (item.event_type === 'stage_changed') {
+      return `Movido de ${getStageName(item.from_stage_id)} para ${getStageName(item.to_stage_id)}`
+    }
+
+    return 'Atualização registrada'
   }
 
   function formatDate(value: string) {
