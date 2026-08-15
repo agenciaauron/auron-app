@@ -34,6 +34,7 @@ type Props = {
 
 type Period = '7d' | '30d' | 'month'
 type Metric = 'leads' | 'qualified' | 'meetings' | 'sales' | 'lost' | 'revenue'
+type StageMetric = 'qualified' | 'meetings' | 'sales' | 'lost'
 
 type MetricEvent = {
   date: Date
@@ -158,7 +159,7 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
     [leads]
   )
 
-  function stageMatches(stageId: string | null, target: 'qualified' | 'meetings' | 'sales' | 'lost') {
+  function stageMatches(stageId: string | null, target: StageMetric) {
     if (!stageId) return false
     const stage = stageMap.get(stageId)
     if (!stage) return false
@@ -171,6 +172,23 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
     return searchable.includes('reuniao')
   }
 
+  function firstStageEvents(target: StageMetric) {
+    const firstEventByLead = new Map<string, HistoryItem>()
+
+    const orderedHistory = [...history].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )
+
+    for (const item of orderedHistory) {
+      if (!stageMatches(item.to_stage_id, target)) continue
+      if (firstEventByLead.has(item.lead_id)) continue
+
+      firstEventByLead.set(item.lead_id, item)
+    }
+
+    return Array.from(firstEventByLead.values())
+  }
+
   function metricEvents(selectedMetric: Metric): MetricEvent[] {
     if (selectedMetric === 'leads') {
       return leads.map((lead) => ({
@@ -179,35 +197,21 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
       }))
     }
 
-    return history.flatMap((item) => {
-      const date = new Date(item.created_at)
-
-      if (selectedMetric === 'qualified' && stageMatches(item.to_stage_id, 'qualified')) {
-        return [{ date, value: 1 }]
-      }
-
-      if (selectedMetric === 'meetings' && stageMatches(item.to_stage_id, 'meetings')) {
-        return [{ date, value: 1 }]
-      }
-
-      if (selectedMetric === 'sales' && stageMatches(item.to_stage_id, 'sales')) {
-        return [{ date, value: 1 }]
-      }
-
-      if (selectedMetric === 'lost' && stageMatches(item.to_stage_id, 'lost')) {
-        return [{ date, value: 1 }]
-      }
-
-      if (selectedMetric === 'revenue' && stageMatches(item.to_stage_id, 'sales')) {
+    if (selectedMetric === 'revenue') {
+      return firstStageEvents('sales').map((item) => {
         const lead = leadMap.get(item.lead_id)
-        return [{
-          date,
-          value: Number(lead?.sale_value ?? lead?.estimated_value ?? 0),
-        }]
-      }
 
-      return []
-    })
+        return {
+          date: new Date(item.created_at),
+          value: Number(lead?.sale_value ?? lead?.estimated_value ?? 0),
+        }
+      })
+    }
+
+    return firstStageEvents(selectedMetric).map((item) => ({
+      date: new Date(item.created_at),
+      value: 1,
+    }))
   }
 
   function totalInRange(selectedMetric: Metric, start: Date, end: Date) {
