@@ -48,6 +48,14 @@ export default async function DashboardPage() {
     )
     .eq('company_id', membership.company_id)
 
+  const { data: history } = await supabase
+    .from('lead_history')
+    .select(
+      'id, lead_id, event_type, from_stage_id, to_stage_id, created_at'
+    )
+    .eq('company_id', membership.company_id)
+    .order('created_at', { ascending: false })
+
   return (
     <main className="min-h-screen bg-zinc-950 p-8 text-white">
       <div className="mb-8 flex items-end justify-between">
@@ -95,47 +103,53 @@ export default async function DashboardPage() {
                   </div>
                 )}
 
-                {stageLeads.map((lead) => (
-                  <div
-                    key={lead.id}
-                    className="rounded-lg border border-zinc-800 bg-zinc-950 p-4"
-                  >
-                    <p className="font-medium">
-                      {lead.name}
-                    </p>
+                {stageLeads.map((lead) => {
+                  const leadHistory =
+                    history?.filter((item) => item.lead_id === lead.id) ?? []
 
-                    {lead.phone && (
-                      <p className="mt-1 text-sm text-zinc-400">
-                        {lead.phone}
+                  return (
+                    <div
+                      key={lead.id}
+                      className="rounded-lg border border-zinc-800 bg-zinc-950 p-4"
+                    >
+                      <p className="font-medium">
+                        {lead.name}
                       </p>
-                    )}
 
-                    {lead.source && (
-                      <p className="mt-2 text-xs text-zinc-500">
-                        Origem: {lead.source}
-                      </p>
-                    )}
+                      {lead.phone && (
+                        <p className="mt-1 text-sm text-zinc-400">
+                          {lead.phone}
+                        </p>
+                      )}
 
-                    {lead.estimated_value && (
-                      <p className="mt-2 text-sm text-zinc-300">
-                        R$ {Number(lead.estimated_value).toLocaleString('pt-BR', {
-                          minimumFractionDigits: 2,
-                        })}
-                      </p>
-                    )}
+                      {lead.source && (
+                        <p className="mt-2 text-xs text-zinc-500">
+                          Origem: {lead.source}
+                        </p>
+                      )}
 
-                    <LeadStageSelect
-                      leadId={lead.id}
-                      currentStageId={lead.stage_id}
-                      stages={stages ?? []}
-                    />
+                      {lead.estimated_value && (
+                        <p className="mt-2 text-sm text-zinc-300">
+                          R$ {Number(lead.estimated_value).toLocaleString('pt-BR', {
+                            minimumFractionDigits: 2,
+                          })}
+                        </p>
+                      )}
 
-                    <LeadDetails
-                      lead={lead}
-                      stages={stages ?? []}
-                    />
-                  </div>
-                ))}
+                      <LeadStageSelect
+                        leadId={lead.id}
+                        currentStageId={lead.stage_id}
+                        stages={stages ?? []}
+                      />
+
+                      <LeadDetails
+                        lead={lead}
+                        stages={stages ?? []}
+                        history={leadHistory}
+                      />
+                    </div>
+                  )
+                })}
               </div>
             </section>
           )
