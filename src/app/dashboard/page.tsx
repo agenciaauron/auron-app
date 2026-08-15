@@ -1,3 +1,4 @@
+import { NewLeadForm } from '@/components/new-lead-form'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 
@@ -5,68 +6,130 @@ export default async function DashboardPage() {
   const supabase = await createClient()
 
   const { data: claimsData } = await supabase.auth.getClaims()
-
   const userId = claimsData?.claims?.sub
 
   if (!userId) {
     redirect('/login')
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, platform_role')
-    .eq('id', userId)
-    .single()
-
   const { data: membership } = await supabase
     .from('company_members')
     .select('company_id, role')
     .eq('user_id', userId)
+    .limit(1)
     .single()
 
-  let company = null
-
-  if (membership) {
-    const { data } = await supabase
-      .from('companies')
-      .select('id, name, slug, status')
-      .eq('id', membership.company_id)
-      .single()
-
-    company = data
+  if (!membership) {
+    return (
+      <main className="min-h-screen bg-zinc-950 p-10 text-white">
+        Nenhuma empresa vinculada.
+      </main>
+    )
   }
 
+  const { data: company } = await supabase
+    .from('companies')
+    .select('id, name')
+    .eq('id', membership.company_id)
+    .single()
+
+  const { data: stages } = await supabase
+    .from('pipeline_stages')
+    .select('id, name, position')
+    .eq('company_id', membership.company_id)
+    .order('position')
+
+  const { data: leads } = await supabase
+    .from('leads')
+    .select('id, name, phone, source, stage_id, estimated_value, sale_value')
+    .eq('company_id', membership.company_id)
+
   return (
-    <main className="min-h-screen bg-zinc-950 p-10 text-white">
-      <h1 className="text-3xl font-bold">
-        Auron App
-      </h1>
+    <main className="min-h-screen bg-zinc-950 p-8 text-white">
 
-      <div className="mt-8 space-y-3 rounded-xl border border-zinc-800 bg-zinc-900 p-6">
-        <p>
-          <strong>Usuário:</strong>{' '}
-          {profile?.full_name ?? 'Não identificado'}
-        </p>
+      <div className="mb-8 flex items-end justify-between">
+  <div>
+    <p className="text-sm text-purple-400">
+      Auron App
+    </p>
 
-        <p>
-          <strong>Nível:</strong>{' '}
-          {profile?.platform_role ?? 'Não identificado'}
-        </p>
+    <h1 className="mt-1 text-3xl font-semibold">
+      {company?.name}
+    </h1>
 
-        <p>
-          <strong>Empresa:</strong>{' '}
-          {company?.name ?? 'Nenhuma empresa vinculada'}
-        </p>
+    <p className="mt-2 text-zinc-400">
+      Funil comercial
+    </p>
+  </div>
 
-        <p>
-          <strong>Função na empresa:</strong>{' '}
-          {membership?.role ?? 'Não identificada'}
-        </p>
+  <NewLeadForm />
+</div>
 
-        <p>
-          <strong>Status:</strong>{' '}
-          {company?.status ?? 'Não identificado'}
-        </p>
+      <div className="flex gap-4 overflow-x-auto pb-6">
+
+        {stages?.map((stage) => {
+          const stageLeads =
+            leads?.filter((lead) => lead.stage_id === stage.id) ?? []
+
+          return (
+            <section
+              key={stage.id}
+              className="min-w-[290px] rounded-xl border border-zinc-800 bg-zinc-900 p-4"
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="font-semibold">
+                  {stage.name}
+                </h2>
+
+                <span className="rounded-full bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
+                  {stageLeads.length}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+
+                {stageLeads.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-zinc-700 p-4 text-center text-sm text-zinc-500">
+                    Nenhum lead
+                  </div>
+                )}
+
+                {stageLeads.map((lead) => (
+                  <div
+                    key={lead.id}
+                    className="rounded-lg border border-zinc-800 bg-zinc-950 p-4"
+                  >
+                    <p className="font-medium">
+                      {lead.name}
+                    </p>
+
+                    {lead.phone && (
+                      <p className="mt-1 text-sm text-zinc-400">
+                        {lead.phone}
+                      </p>
+                    )}
+
+                    {lead.source && (
+                      <p className="mt-2 text-xs text-zinc-500">
+                        Origem: {lead.source}
+                      </p>
+                    )}
+
+                    {lead.estimated_value && (
+                      <p className="mt-2 text-sm text-zinc-300">
+                        R$ {Number(lead.estimated_value).toLocaleString('pt-BR', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </p>
+                    )}
+                  </div>
+                ))}
+
+              </div>
+            </section>
+          )
+        })}
+
       </div>
     </main>
   )
