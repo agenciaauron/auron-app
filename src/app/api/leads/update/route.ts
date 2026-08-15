@@ -24,7 +24,6 @@ export async function PATCH(request: Request) {
     source,
     campaign,
     notes,
-    estimatedValue,
     saleValue,
     stageId,
   } = body
@@ -52,7 +51,7 @@ export async function PATCH(request: Request) {
 
   const { data: stage } = await supabase
     .from('pipeline_stages')
-    .select('id')
+    .select('id, is_won')
     .eq('id', stageId)
     .eq('company_id', membership.company_id)
     .single()
@@ -64,22 +63,14 @@ export async function PATCH(request: Request) {
     )
   }
 
-  const parsedEstimatedValue =
-    estimatedValue === '' || estimatedValue == null
-      ? null
-      : Number(estimatedValue)
-
   const parsedSaleValue =
     saleValue === '' || saleValue == null
       ? null
       : Number(saleValue)
 
-  if (
-    (parsedEstimatedValue !== null && Number.isNaN(parsedEstimatedValue)) ||
-    (parsedSaleValue !== null && Number.isNaN(parsedSaleValue))
-  ) {
+  if (parsedSaleValue !== null && Number.isNaN(parsedSaleValue)) {
     return NextResponse.json(
-      { error: 'Valor inválido' },
+      { error: 'Valor da venda inválido' },
       { status: 400 }
     )
   }
@@ -93,8 +84,7 @@ export async function PATCH(request: Request) {
       source: source?.trim() || null,
       campaign: campaign?.trim() || null,
       notes: notes?.trim() || null,
-      estimated_value: parsedEstimatedValue,
-      sale_value: parsedSaleValue,
+      sale_value: stage.is_won ? parsedSaleValue : null,
       stage_id: stageId,
       updated_at: new Date().toISOString(),
     })
