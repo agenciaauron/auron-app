@@ -19,6 +19,12 @@ type Lead = {
   notes: string | null
   stage_id: string | null
   sale_value: number | string | null
+  integration_source: string | null
+  ctwa_clid: string | null
+  meta_qualified_sent_at: string | null
+  meta_purchase_sent_at: string | null
+  meta_last_error: string | null
+  meta_last_error_at: string | null
 }
 
 type HistoryItem = {
@@ -27,6 +33,13 @@ type HistoryItem = {
   from_stage_id: string | null
   to_stage_id: string | null
   created_at: string
+}
+
+type MetaResult = {
+  status?: 'sent' | 'already_sent' | 'waiting_value' | 'not_eligible' | 'error'
+  event_name?: 'QualifiedLead' | 'Purchase'
+  message?: string
+  error?: string
 }
 
 type Props = {
@@ -45,6 +58,7 @@ export function LeadDetails({ lead, stages, history }: Props) {
 
   const selectedStage = stages.find((stage) => stage.id === selectedStageId)
   const isSaleStage = Boolean(selectedStage?.is_won)
+  const metaEligible = lead.integration_source === 'whatsapp' && Boolean(lead.ctwa_clid)
 
   function getStageName(stageId: string | null) {
     if (!stageId) return 'Etapa não identificada'
@@ -102,6 +116,22 @@ export function LeadDetails({ lead, stages, history }: Props) {
     if (!response.ok) {
       setError(result.error || 'Não foi possível atualizar o lead.')
       setLoading(false)
+      return
+    }
+
+    const meta = result.meta as MetaResult | null | undefined
+
+    if (meta?.status === 'error') {
+      setError(`Lead salvo, mas a Meta não confirmou o evento: ${meta.error || 'erro desconhecido'}`)
+      setLoading(false)
+      router.refresh()
+      return
+    }
+
+    if (meta?.status === 'waiting_value') {
+      setError(meta.message || 'Informe o valor da venda para enviar o evento à Meta.')
+      setLoading(false)
+      router.refresh()
       return
     }
 
@@ -217,10 +247,71 @@ export function LeadDetails({ lead, stages, history }: Props) {
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-emerald-500"
               />
               <p className="mt-2 text-xs text-zinc-500">
-                Esse valor alimenta automaticamente os indicadores de vendas da Visão geral.
+                Esse valor alimenta automaticamente os indicadores de vendas da Visão geral e o evento Purchase da Meta.
               </p>
             </div>
           )}
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-zinc-200">Meta</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Retorno dos eventos enviados pelo CRM
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                  metaEligible
+                    ? 'bg-purple-500/10 text-purple-300'
+                    : 'bg-zinc-800 text-zinc-500'
+                }`}
+              >
+                {metaEligible ? 'Anúncio vinculado' : 'Sem CTWA'}
+              </span>
+            </div>
+
+            {metaEligible ? (
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-zinc-400">QualifiedLead</span>
+                  {lead.meta_qualified_sent_at ? (
+                    <span className="text-right text-emerald-400">
+                      Enviado · {formatDate(lead.meta_qualified_sent_at)}
+                    </span>
+                  ) : (
+                    <span className="text-zinc-600">Ainda não enviado</span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-zinc-400">Purchase</span>
+                  {lead.meta_purchase_sent_at ? (
+                    <span className="text-right text-emerald-400">
+                      Enviado · {formatDate(lead.meta_purchase_sent_at)}
+                    </span>
+                  ) : (
+                    <span className="text-zinc-600">Ainda não enviado</span>
+                  )}
+                </div>
+
+                {lead.meta_last_error && (
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-300">
+                    Último erro da Meta: {lead.meta_last_error}
+                    {lead.meta_last_error_at && (
+                      <span className="mt-1 block text-red-400/70">
+                        {formatDate(lead.meta_last_error_at)}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="mt-4 text-xs leading-5 text-zinc-500">
+                Esse lead não possui ctwa_clid. Eventos de conversão não serão enviados para a Meta porque ele não veio de um anúncio Click-to-WhatsApp.
+              </p>
+            )}
+          </div>
 
           <textarea
             name="notes"
