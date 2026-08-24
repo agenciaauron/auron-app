@@ -39,11 +39,21 @@ export function LeadStageSelect({
       }),
     })
 
+    const result = await response.json()
+
     if (!response.ok) {
       setStageId(currentStageId ?? '')
       alert('Não foi possível alterar a etapa.')
       setLoading(false)
       return
+    }
+
+    if (result.meta?.status === 'error') {
+      alert(`Etapa alterada, mas a Meta não confirmou o evento: ${result.meta.error || 'erro desconhecido'}`)
+    }
+
+    if (result.meta?.status === 'waiting_value') {
+      alert('Etapa alterada. Abra a ficha do lead e informe o valor da venda para enviar Purchase à Meta.')
     }
 
     setLoading(false)
