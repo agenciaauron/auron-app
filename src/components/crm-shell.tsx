@@ -31,8 +31,12 @@ export function CrmShell({ companyName, role, activeItem, children }: Props) {
     <div className="min-h-screen bg-[#09090b] text-white">
       <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-zinc-800/80 bg-zinc-950 lg:flex">
         <div className="flex h-20 items-center border-b border-zinc-800/80 px-6">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600 font-semibold shadow-lg shadow-purple-950/40">
-            A
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center">
+            <img
+              src="/logo-auron.svg"
+              alt="Auron Marketing"
+              className="h-full w-full object-contain"
+            />
           </div>
           <div className="ml-3">
             <p className="font-semibold tracking-tight">Auron CRM</p>
@@ -87,8 +91,12 @@ export function CrmShell({ companyName, role, activeItem, children }: Props) {
       <main className="min-h-screen lg:pl-64">
         <div className="mx-auto max-w-[1800px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <div className="mb-6 flex items-center lg:hidden">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600 font-semibold">
-              A
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+              <img
+                src="/logo-auron.svg"
+                alt="Auron Marketing"
+                className="h-full w-full object-contain"
+              />
             </div>
             <div className="ml-3">
               <p className="font-semibold">Auron CRM</p>
