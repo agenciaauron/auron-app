@@ -156,6 +156,14 @@ export function CrmPipeline({ stages, leads, history }: Props) {
       }
 
       applyMetaResult(leadId, result.meta)
+
+      if (result.meta?.status === 'waiting_value') {
+        alert('Lead movido para Venda. Abra a ficha e informe o valor da venda para enviar Purchase à Meta.')
+      }
+
+      if (result.meta?.status === 'error') {
+        alert(`Lead movido, mas a Meta não confirmou o evento: ${result.meta.error || 'erro desconhecido'}`)
+      }
     } catch {
       setLocalLeads((current) =>
         current.map((item) =>
