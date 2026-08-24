@@ -29,33 +29,40 @@ export default async function LeadsPage() {
     )
   }
 
-  const { data: company } = await supabase
-    .from('companies')
-    .select('id, name')
-    .eq('id', membership.company_id)
-    .single()
+  const companyId = membership.company_id
 
-  const { data: stages } = await supabase
-    .from('pipeline_stages')
-    .select('id, name, position, is_won, is_lost')
-    .eq('company_id', membership.company_id)
-    .order('position')
+  const [companyResult, stagesResult, leadsResult, historyResult] =
+    await Promise.all([
+      supabase
+        .from('companies')
+        .select('id, name')
+        .eq('id', companyId)
+        .single(),
+      supabase
+        .from('pipeline_stages')
+        .select('id, name, position, is_won, is_lost')
+        .eq('company_id', companyId)
+        .order('position'),
+      supabase
+        .from('leads')
+        .select(
+          'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at'
+        )
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('lead_history')
+        .select(
+          'id, lead_id, event_type, from_stage_id, to_stage_id, created_at'
+        )
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false }),
+    ])
 
-  const { data: leads } = await supabase
-    .from('leads')
-    .select(
-      'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at'
-    )
-    .eq('company_id', membership.company_id)
-    .order('created_at', { ascending: false })
-
-  const { data: history } = await supabase
-    .from('lead_history')
-    .select(
-      'id, lead_id, event_type, from_stage_id, to_stage_id, created_at'
-    )
-    .eq('company_id', membership.company_id)
-    .order('created_at', { ascending: false })
+  const company = companyResult.data
+  const stages = stagesResult.data
+  const leads = leadsResult.data
+  const history = historyResult.data
 
   return (
     <CrmShell
