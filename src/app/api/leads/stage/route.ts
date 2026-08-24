@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { syncMetaEvent } from '@/lib/meta-events'
 
 export async function PATCH(request: Request) {
   const supabase = await createClient()
@@ -39,7 +40,7 @@ export async function PATCH(request: Request) {
 
   const { data: stage } = await supabase
     .from('pipeline_stages')
-    .select('id')
+    .select('id, name, is_won')
     .eq('id', stageId)
     .eq('company_id', membership.company_id)
     .single()
@@ -59,7 +60,7 @@ export async function PATCH(request: Request) {
     })
     .eq('id', leadId)
     .eq('company_id', membership.company_id)
-    .select('id')
+    .select('id, sale_value')
 
   if (error) {
     return NextResponse.json(
@@ -75,5 +76,14 @@ export async function PATCH(request: Request) {
     )
   }
 
-  return NextResponse.json({ success: true })
+  const saleValue = data[0].sale_value == null ? null : Number(data[0].sale_value)
+  const meta = await syncMetaEvent({
+    supabase,
+    leadId,
+    stageName: stage.name,
+    isWon: Boolean(stage.is_won),
+    saleValue,
+  })
+
+  return NextResponse.json({ success: true, meta })
 }
