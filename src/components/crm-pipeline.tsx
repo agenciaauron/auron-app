@@ -1,7 +1,6 @@
 'use client'
 
 import { DragEvent, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { LeadDetails } from '@/components/lead-details'
 import { LeadStageSelect } from '@/components/lead-stage-select'
 
@@ -48,7 +47,6 @@ function formatCurrency(value: number | string) {
 }
 
 export function CrmPipeline({ stages, leads, history }: Props) {
-  const router = useRouter()
   const [localLeads, setLocalLeads] = useState(leads)
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null)
   const [overStageId, setOverStageId] = useState<string | null>(null)
@@ -101,8 +99,6 @@ export function CrmPipeline({ stages, leads, history }: Props) {
       if (!response.ok) {
         throw new Error('Não foi possível mover o lead.')
       }
-
-      router.refresh()
     } catch {
       setLocalLeads((current) =>
         current.map((item) =>
