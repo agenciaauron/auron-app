@@ -22,6 +22,12 @@ type Lead = {
   notes: string | null
   stage_id: string | null
   sale_value: number | string | null
+  integration_source: string | null
+  ctwa_clid: string | null
+  meta_qualified_sent_at: string | null
+  meta_purchase_sent_at: string | null
+  meta_last_error: string | null
+  meta_last_error_at: string | null
 }
 
 type HistoryItem = {
@@ -31,6 +37,13 @@ type HistoryItem = {
   from_stage_id: string | null
   to_stage_id: string | null
   created_at: string
+}
+
+type MetaResult = {
+  status?: 'sent' | 'already_sent' | 'waiting_value' | 'not_eligible' | 'error'
+  event_name?: 'QualifiedLead' | 'Purchase'
+  sent_at?: string | null
+  error?: string
 }
 
 type Props = {
@@ -67,6 +80,46 @@ export function CrmPipeline({ stages, leads, history }: Props) {
     setOverStageId(null)
   }
 
+  function applyMetaResult(leadId: string, meta: MetaResult | null | undefined) {
+    if (!meta) return
+
+    setLocalLeads((current) =>
+      current.map((item) => {
+        if (item.id !== leadId) return item
+
+        if (meta.status === 'sent' || meta.status === 'already_sent') {
+          if (meta.event_name === 'QualifiedLead') {
+            return {
+              ...item,
+              meta_qualified_sent_at: meta.sent_at ?? item.meta_qualified_sent_at,
+              meta_last_error: null,
+              meta_last_error_at: null,
+            }
+          }
+
+          if (meta.event_name === 'Purchase') {
+            return {
+              ...item,
+              meta_purchase_sent_at: meta.sent_at ?? item.meta_purchase_sent_at,
+              meta_last_error: null,
+              meta_last_error_at: null,
+            }
+          }
+        }
+
+        if (meta.status === 'error') {
+          return {
+            ...item,
+            meta_last_error: meta.error || 'Falha ao enviar evento à Meta.',
+            meta_last_error_at: new Date().toISOString(),
+          }
+        }
+
+        return item
+      })
+    )
+  }
+
   async function moveLead(leadId: string, stageId: string) {
     const lead = localLeads.find((item) => item.id === leadId)
 
@@ -96,9 +149,13 @@ export function CrmPipeline({ stages, leads, history }: Props) {
         body: JSON.stringify({ leadId, stageId }),
       })
 
+      const result = await response.json()
+
       if (!response.ok) {
-        throw new Error('Não foi possível mover o lead.')
+        throw new Error(result.error || 'Não foi possível mover o lead.')
       }
+
+      applyMetaResult(leadId, result.meta)
     } catch {
       setLocalLeads((current) =>
         current.map((item) =>
@@ -188,6 +245,9 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                 )
                 const isDragging = draggingLeadId === lead.id
                 const isSaving = savingLeadId === lead.id
+                const hasMetaSuccess = Boolean(
+                  lead.meta_qualified_sent_at || lead.meta_purchase_sent_at
+                )
 
                 return (
                   <div
@@ -222,6 +282,18 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                         </span>
                       )}
                     </div>
+
+                    {lead.ctwa_clid && (
+                      <div className="mt-3 flex items-center gap-2 text-[11px]">
+                        {lead.meta_last_error ? (
+                          <span className="text-red-400">Meta: erro no último envio</span>
+                        ) : hasMetaSuccess ? (
+                          <span className="text-emerald-400">Meta: evento enviado</span>
+                        ) : (
+                          <span className="text-zinc-600">Meta: anúncio vinculado</span>
+                        )}
+                      </div>
+                    )}
 
                     {(lead.campaign || (stage.is_won && lead.sale_value != null)) && (
                       <div className="mt-4 border-t border-zinc-800/80 pt-3">
