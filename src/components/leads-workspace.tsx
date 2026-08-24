@@ -24,6 +24,12 @@ type Lead = {
   stage_id: string | null
   sale_value: number | string | null
   created_at: string
+  integration_source: string | null
+  ctwa_clid: string | null
+  meta_qualified_sent_at: string | null
+  meta_purchase_sent_at: string | null
+  meta_last_error: string | null
+  meta_last_error_at: string | null
 }
 
 type HistoryItem = {
