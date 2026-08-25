@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { syncMetaEvent } from '@/lib/meta-events'
 
@@ -106,6 +107,9 @@ export async function PATCH(request: Request) {
       { status: 404 }
     )
   }
+
+  revalidatePath('/leads')
+  revalidatePath('/dashboard')
 
   const meta = await syncMetaEvent({
     supabase,
