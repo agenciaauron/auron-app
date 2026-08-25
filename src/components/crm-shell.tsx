@@ -1,8 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ReactNode, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { ReactNode } from 'react'
 
 type Props = {
   companyName: string
@@ -20,13 +19,6 @@ const navigation = [
 ] as const
 
 export function CrmShell({ companyName, role, activeItem, children }: Props) {
-  const router = useRouter()
-
-  useEffect(() => {
-    router.prefetch('/dashboard')
-    router.prefetch('/leads')
-  }, [router])
-
   return (
     <div className="min-h-screen bg-[#09090b] text-white">
       <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-zinc-800/80 bg-zinc-950 lg:flex">
@@ -66,8 +58,7 @@ export function CrmShell({ companyName, role, activeItem, children }: Props) {
               <Link
                 key={item.key}
                 href={item.href}
-                prefetch={true}
-                onMouseEnter={() => router.prefetch(item.href)}
+                prefetch={false}
                 className={`block rounded-lg px-3 py-2.5 text-sm transition ${
                   active
                     ? 'bg-purple-600/15 font-medium text-purple-300'
