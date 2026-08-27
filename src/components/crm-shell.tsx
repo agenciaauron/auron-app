@@ -15,7 +15,7 @@ const navigation = [
   { key: 'overview', label: 'Visão geral', href: '/dashboard', enabled: true },
   { key: 'leads', label: 'Leads', href: '/leads', enabled: true },
   { key: 'contracts', label: 'Contratos', href: '#', enabled: false },
-  { key: 'finance', label: 'Financeiro', href: '#', enabled: false },
+  { key: 'finance', label: 'Financeiro', href: '/financeiro', enabled: true },
   { key: 'reports', label: 'Relatórios', href: '#', enabled: false },
 ] as const
 
@@ -25,6 +25,7 @@ export function CrmShell({ companyName, role, activeItem, children }: Props) {
   useEffect(() => {
     router.prefetch('/dashboard')
     router.prefetch('/leads')
+    router.prefetch('/financeiro')
   }, [router])
 
   return (
