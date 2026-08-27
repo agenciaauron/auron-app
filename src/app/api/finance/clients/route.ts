@@ -62,7 +62,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const context = await getContext()
-  if (context.error || !context.companyId) return context.error
+  if (context.error) return context.error
+  if (!context.companyId) return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 })
 
   const { supabase, companyId } = context
   const body = await request.json()
