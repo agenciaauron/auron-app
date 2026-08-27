@@ -10,7 +10,7 @@ async function getContext() {
   const userId = claimsData?.claims?.sub
 
   if (!userId) {
-    return { supabase, error: NextResponse.json({ error: 'Não autorizado' }, { status: 401 }) }
+    return { supabase, companyId: null, error: NextResponse.json({ error: 'Não autorizado' }, { status: 401 }) }
   }
 
   const { data: membership } = await supabase
@@ -21,7 +21,7 @@ async function getContext() {
     .single()
 
   if (!membership) {
-    return { supabase, error: NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 }) }
+    return { supabase, companyId: null, error: NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 }) }
   }
 
   return { supabase, companyId: membership.company_id, error: null }
@@ -29,7 +29,8 @@ async function getContext() {
 
 export async function POST(request: Request) {
   const context = await getContext()
-  if (context.error || !context.companyId) return context.error
+  if (context.error) return context.error
+  if (!context.companyId) return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 })
 
   const { supabase, companyId } = context
   const body = await request.json()
