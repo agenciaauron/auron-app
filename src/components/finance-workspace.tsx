@@ -63,12 +63,16 @@ function dueDateForCurrentMonth(dueDay: number) {
   const year = now.getFullYear()
   const month = now.getMonth()
   const lastDay = new Date(year, month + 1, 0).getDate()
-  return new Date(year, month, Math.min(dueDay, lastDay), 23, 59, 59)
+  return new Date(year, month, Math.min(dueDay, lastDay))
 }
 
+// Diferença em dias de calendário (ignora horário e horário de verão).
+// Antes o vencimento era 23:59 e "hoje" 00:00, o que deixava tudo 1 dia adiantado.
 function daysBetween(a: Date, b: Date) {
   const dayMs = 1000 * 60 * 60 * 24
-  return Math.ceil((a.getTime() - b.getTime()) / dayMs)
+  const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())
+  const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate())
+  return Math.round((utcA - utcB) / dayMs)
 }
 
 export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
@@ -147,7 +151,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
     }
 
     if (difference <= 3) {
-      return { label: `Vence em ${difference} dias`, className: 'border-amber-500/20 bg-amber-500/10 text-amber-300' }
+      return { label: difference === 1 ? 'Vence amanhã' : `Vence em ${difference} dias`, className: 'border-amber-500/20 bg-amber-500/10 text-amber-300' }
     }
 
     return { label: 'Em dia', className: 'border-auron-500/20 bg-auron-500/10 text-auron-300' }

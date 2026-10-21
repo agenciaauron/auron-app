@@ -344,9 +344,6 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
   const currentEvents = metricEvents(metric).filter((event) =>
     inRange(event.date, range.start, range.end)
   )
-  const previousEvents = metricEvents(metric).filter((event) =>
-    inRange(event.date, range.prevStart, range.prevEnd)
-  )
 
   function makeDailySeries(events: MetricEvent[], start: Date, end: Date) {
     const values = new Map<string, number>()
@@ -372,11 +369,9 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
   }
 
   const currentSeries = makeDailySeries(currentEvents, range.start, range.end)
-  const previousSeries = makeDailySeries(previousEvents, range.prevStart, range.prevEnd)
 
   const selectedMetricLabel = metricOptions.find((item) => item.value === metric)?.label ?? ''
   const currentTotal = totalInRange(metric, range.start, range.end)
-  const previousTotal = totalInRange(metric, range.prevStart, range.prevEnd)
   const metricFormatter = metric === 'revenue'
     ? formatCurrency
     : (value: number) => value.toLocaleString('pt-BR')
@@ -469,15 +464,10 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm text-ink-500">Evolução no período</p>
-            <div className="mt-2 flex flex-wrap items-end gap-3">
-              <p className="font-display text-3xl font-semibold tracking-tight tabular text-ink-50">
-                {metricFormatter(currentTotal)}
-              </p>
-              <Comparison current={currentTotal} previous={previousTotal} />
-            </div>
-            <p className="mt-2 text-xs text-ink-600">
-              {range.currentLabel} comparado com {range.previousLabel.toLowerCase()}
+            <p className="mt-2 font-display text-3xl font-semibold tracking-tight tabular text-ink-50">
+              {metricFormatter(currentTotal)}
             </p>
+            <p className="mt-2 text-xs text-ink-600">{range.currentLabel}</p>
           </div>
 
           <select
@@ -495,9 +485,6 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
 
         <InteractivePerformanceChart
           currentSeries={currentSeries}
-          previousSeries={previousSeries}
-          currentLabel={range.currentLabel}
-          previousLabel={range.previousLabel}
           metricLabel={selectedMetricLabel}
           currency={metric === 'revenue'}
         />

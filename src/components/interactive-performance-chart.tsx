@@ -9,9 +9,6 @@ type SeriesPoint = {
 
 type Props = {
   currentSeries: SeriesPoint[]
-  previousSeries: SeriesPoint[]
-  currentLabel: string
-  previousLabel: string
   metricLabel: string
   currency?: boolean
 }
@@ -22,11 +19,9 @@ type TooltipPosition = {
   flip: boolean
 }
 
-// Período atual em colunas (contagens diárias), período anterior como linha discreta.
-// Cores validadas para daltonismo sobre o fundo ink-950.
+// Uma coluna por dia. Cor validada para daltonismo sobre o fundo ink-950.
 const BAR_COLOR = '#9b72f8'
 const BAR_ACTIVE = '#c4b5fd'
-const PREVIOUS_COLOR = '#736d8f'
 const GRID_COLOR = '#26223a'
 const AXIS_TEXT = '#736d8f'
 
@@ -81,9 +76,6 @@ function columnPath(x: number, y: number, w: number, h: number) {
 
 export function InteractivePerformanceChart({
   currentSeries,
-  previousSeries,
-  currentLabel,
-  previousLabel,
   metricLabel,
   currency = false,
 }: Props) {
@@ -91,24 +83,16 @@ export function InteractivePerformanceChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tooltipPosition, setTooltipPosition] = useState<TooltipPosition | null>(null)
 
-  const count = Math.max(currentSeries.length, previousSeries.length, 1)
+  const count = Math.max(currentSeries.length, 1)
   const slot = plotWidth / count
   const barWidth = Math.min(22, Math.max(slot * 0.62, 3))
 
-  const dataMax = Math.max(
-    0,
-    ...currentSeries.map((item) => item.value),
-    ...previousSeries.map((item) => item.value)
-  )
+  const dataMax = Math.max(0, ...currentSeries.map((item) => item.value))
   const { top, step } = niceScale(dataMax)
   const ticks = [0, 1, 2, 3, 4].map((i) => i * step)
 
   const centerX = (index: number) => paddingLeft + slot * (index + 0.5)
   const yFor = (value: number) => paddingTop + plotHeight - (value / top) * plotHeight
-
-  const previousPath = previousSeries
-    .map((item, index) => `${index === 0 ? 'M' : 'L'} ${centerX(index)} ${yFor(item.value)}`)
-    .join(' ')
 
   const labelIndexes = currentSeries.length
     ? Array.from(
@@ -147,27 +131,15 @@ export function InteractivePerformanceChart({
   }
 
   const hoveredData = hoveredIndex === null ? null : currentSeries[hoveredIndex]
-  const hoveredPrevious = hoveredIndex === null ? null : previousSeries[hoveredIndex]
 
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap gap-5 text-xs text-ink-400">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: BAR_COLOR }} />
-          {currentLabel}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-0.5 w-4 rounded-full" style={{ background: PREVIOUS_COLOR }} />
-          {previousLabel}
-        </div>
-      </div>
-
+    <div className="mt-2">
       <div ref={containerRef} className="relative">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           className="block h-auto w-full select-none"
           role="img"
-          aria-label={`${metricLabel} por dia: ${currentLabel} em colunas, ${previousLabel} em linha`}
+          aria-label={`${metricLabel} por dia`}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
@@ -218,18 +190,6 @@ export function InteractivePerformanceChart({
             )
           })}
 
-          {previousSeries.length > 1 && (
-            <path
-              d={previousPath}
-              fill="none"
-              stroke={PREVIOUS_COLOR}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity="0.9"
-            />
-          )}
-
           {labelIndexes.map((index) => {
             const item = currentSeries[index]
             if (!item) return null
@@ -259,7 +219,7 @@ export function InteractivePerformanceChart({
 
         {hoveredData && tooltipPosition && (
           <div
-            className="pointer-events-none absolute z-30 min-w-[230px] rounded-xl border border-ink-700 bg-ink-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
+            className="pointer-events-none absolute z-30 min-w-[180px] rounded-xl border border-ink-700 bg-ink-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
             style={{
               left: tooltipPosition.x,
               top: tooltipPosition.y,
@@ -282,17 +242,6 @@ export function InteractivePerformanceChart({
                 {formatValue(hoveredData.value, currency)}
               </span>
             </div>
-            {hoveredPrevious && (
-              <div className="mt-1 flex items-center justify-between gap-4 text-xs">
-                <span className="flex items-center gap-2 text-ink-500">
-                  <span className="h-0.5 w-2.5 rounded-full" style={{ background: PREVIOUS_COLOR }} />
-                  {previousLabel}
-                </span>
-                <span className="tabular text-ink-400">
-                  {formatValue(hoveredPrevious.value, currency)}
-                </span>
-              </div>
-            )}
           </div>
         )}
       </div>
