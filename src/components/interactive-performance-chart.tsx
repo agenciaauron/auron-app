@@ -1,6 +1,6 @@
 'use client'
 
-import { MouseEvent, useMemo, useRef, useState } from 'react'
+import { MouseEvent, useRef, useState } from 'react'
 
 type SeriesPoint = {
   date: Date
@@ -16,22 +16,26 @@ type Props = {
   currency?: boolean
 }
 
-type Point = {
-  x: number
-  y: number
-}
-
 type TooltipPosition = {
   x: number
   y: number
+  flip: boolean
 }
 
+// Período atual em colunas (contagens diárias), período anterior como linha discreta.
+// Cores validadas para daltonismo sobre o fundo ink-950.
+const BAR_COLOR = '#9b72f8'
+const BAR_ACTIVE = '#c4b5fd'
+const PREVIOUS_COLOR = '#736d8f'
+const GRID_COLOR = '#26223a'
+const AXIS_TEXT = '#736d8f'
+
 const width = 1000
-const height = 320
-const paddingLeft = 56
-const paddingRight = 24
-const paddingTop = 24
-const paddingBottom = 42
+const height = 260
+const paddingLeft = 44
+const paddingRight = 8
+const paddingTop = 16
+const paddingBottom = 32
 const plotWidth = width - paddingLeft - paddingRight
 const plotHeight = height - paddingTop - paddingBottom
 
@@ -44,39 +48,35 @@ function formatValue(value: number, currency: boolean) {
     return value.toLocaleString('pt-BR', {
       style: 'currency',
       currency: 'BRL',
+      maximumFractionDigits: value >= 1000 ? 0 : 2,
     })
   }
 
-  return value.toLocaleString('pt-BR', {
-    maximumFractionDigits: 2,
-  })
+  return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
 }
 
-function makeSmoothPath(points: Point[]) {
-  if (points.length === 0) return ''
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`
+function formatTick(value: number, currency: boolean) {
+  const compact = value.toLocaleString('pt-BR', {
+    notation: value >= 1000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  })
+  return currency ? `R$ ${compact}` : compact
+}
 
-  let path = `M ${points[0].x} ${points[0].y}`
+// Topo "redondo" do eixo: 1, 2, 5 × 10ⁿ, com 4 divisões.
+function niceScale(max: number) {
+  if (max <= 4) return { top: 4, step: 1 }
+  const target = max / 4
+  const magnitude = 10 ** Math.floor(Math.log10(target))
+  const step = [1, 2, 5, 10].map((m) => m * magnitude).find((s) => s >= target) ?? target
+  return { top: step * 4, step }
+}
 
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const p0 = points[index - 1] ?? points[index]
-    const p1 = points[index]
-    const p2 = points[index + 1]
-    const p3 = points[index + 2] ?? p2
-
-    // Os pontos de controle ficam entre p1 e p2 no eixo Y, então a curva nunca
-    // passa do valor real (antes ela descia abaixo de zero em dias sem lead).
-    const minY = Math.min(p1.y, p2.y)
-    const maxY = Math.max(p1.y, p2.y)
-    const cp1x = p1.x + (p2.x - p0.x) / 6
-    const cp1y = clamp(p1.y + (p2.y - p0.y) / 6, minY, maxY)
-    const cp2x = p2.x - (p3.x - p1.x) / 6
-    const cp2y = clamp(p2.y - (p3.y - p1.y) / 6, minY, maxY)
-
-    path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
-  }
-
-  return path
+// Coluna com 4px de raio no topo e base reta.
+function columnPath(x: number, y: number, w: number, h: number) {
+  if (h <= 0) return ''
+  const r = Math.min(4, w / 2, h)
+  return `M ${x} ${y + h} V ${y + r} Q ${x} ${y} ${x + r} ${y} H ${x + w - r} Q ${x + w} ${y} ${x + w} ${y + r} V ${y + h} Z`
 }
 
 export function InteractivePerformanceChart({
@@ -91,45 +91,28 @@ export function InteractivePerformanceChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tooltipPosition, setTooltipPosition] = useState<TooltipPosition | null>(null)
 
-  const pointCount = Math.max(currentSeries.length, previousSeries.length, 2)
-  const maxValue = Math.max(
-    1,
+  const count = Math.max(currentSeries.length, previousSeries.length, 1)
+  const slot = plotWidth / count
+  const barWidth = Math.min(22, Math.max(slot * 0.62, 3))
+
+  const dataMax = Math.max(
+    0,
     ...currentSeries.map((item) => item.value),
     ...previousSeries.map((item) => item.value)
   )
+  const { top, step } = niceScale(dataMax)
+  const ticks = [0, 1, 2, 3, 4].map((i) => i * step)
 
-  function xForIndex(index: number) {
-    return paddingLeft + (index / Math.max(pointCount - 1, 1)) * plotWidth
-  }
+  const centerX = (index: number) => paddingLeft + slot * (index + 0.5)
+  const yFor = (value: number) => paddingTop + plotHeight - (value / top) * plotHeight
 
-  function yForValue(value: number) {
-    return paddingTop + plotHeight - (value / maxValue) * plotHeight
-  }
-
-  const currentPoints = useMemo(
-    () => currentSeries.map((item, index) => ({ x: xForIndex(index), y: yForValue(item.value) })),
-    [currentSeries, pointCount, maxValue]
-  )
-
-  const previousPoints = useMemo(
-    () => previousSeries.map((item, index) => ({ x: xForIndex(index), y: yForValue(item.value) })),
-    [previousSeries, pointCount, maxValue]
-  )
-
-  const currentPath = useMemo(() => makeSmoothPath(currentPoints), [currentPoints])
-  const previousPath = useMemo(() => makeSmoothPath(previousPoints), [previousPoints])
-
-  const areaPath = currentPoints.length
-    ? `${currentPath} L ${currentPoints[currentPoints.length - 1].x} ${paddingTop + plotHeight} L ${currentPoints[0].x} ${paddingTop + plotHeight} Z`
-    : ''
+  const previousPath = previousSeries
+    .map((item, index) => `${index === 0 ? 'M' : 'L'} ${centerX(index)} ${yFor(item.value)}`)
+    .join(' ')
 
   const labelIndexes = currentSeries.length
     ? Array.from(
-        new Set([
-          0,
-          Math.floor((currentSeries.length - 1) / 2),
-          currentSeries.length - 1,
-        ])
+        new Set([0, Math.floor((currentSeries.length - 1) / 2), currentSeries.length - 1])
       )
     : []
 
@@ -138,17 +121,14 @@ export function InteractivePerformanceChart({
 
     const svg = event.currentTarget
     const screenMatrix = svg.getScreenCTM()
-
     if (!screenMatrix) return
 
     const pointer = svg.createSVGPoint()
     pointer.x = event.clientX
     pointer.y = event.clientY
-
     const svgPointer = pointer.matrixTransform(screenMatrix.inverse())
-    const normalized = (svgPointer.x - paddingLeft) / plotWidth
-    const index = Math.round(normalized * Math.max(currentSeries.length - 1, 0))
 
+    const index = Math.floor((svgPointer.x - paddingLeft) / slot)
     setHoveredIndex(clamp(index, 0, currentSeries.length - 1))
 
     const containerRect = containerRef.current?.getBoundingClientRect()
@@ -156,6 +136,7 @@ export function InteractivePerformanceChart({
       setTooltipPosition({
         x: event.clientX - containerRect.left,
         y: event.clientY - containerRect.top,
+        flip: event.clientX - containerRect.left > containerRect.width * 0.75,
       })
     }
   }
@@ -165,194 +146,153 @@ export function InteractivePerformanceChart({
     setTooltipPosition(null)
   }
 
-  const hoveredPoint = hoveredIndex === null ? null : currentPoints[hoveredIndex]
   const hoveredData = hoveredIndex === null ? null : currentSeries[hoveredIndex]
+  const hoveredPrevious = hoveredIndex === null ? null : previousSeries[hoveredIndex]
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap gap-5 text-xs">
-        <div className="flex items-center gap-2 text-ink-400">
-          <span className="h-0.5 w-6 rounded-full bg-auron-500" />
+      <div className="mb-4 flex flex-wrap gap-5 text-xs text-ink-400">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: BAR_COLOR }} />
           {currentLabel}
         </div>
-        <div className="flex items-center gap-2 text-ink-500">
-          <span className="w-6 border-t border-dashed border-ink-500" />
+        <div className="flex items-center gap-2">
+          <span className="h-0.5 w-4 rounded-full" style={{ background: PREVIOUS_COLOR }} />
           {previousLabel}
         </div>
       </div>
 
       <div ref={containerRef} className="relative">
-        <div className="overflow-hidden rounded-2xl border border-ink-800/80 bg-ink-950/70 px-2 py-3">
-          <svg
-            viewBox={`0 0 ${width} ${height}`}
-            className="block h-auto w-full select-none"
-            role="img"
-            aria-label={`Gráfico de ${metricLabel}`}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
-          >
-            <defs>
-              <linearGradient id="auron-chart-area" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.24" />
-                <stop offset="100%" stopColor="#a78bfa" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-
-            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-              const y = paddingTop + plotHeight * ratio
-              return (
-                <line
-                  key={ratio}
-                  x1={paddingLeft}
-                  x2={width - paddingRight}
-                  y1={y}
-                  y2={y}
-                  stroke="currentColor"
-                  className="text-ink-800/80"
-                  strokeWidth="1"
-                />
-              )
-            })}
-
-            <text
-              x={paddingLeft - 10}
-              y={paddingTop + 4}
-              textAnchor="end"
-              fill="currentColor"
-              className="text-ink-600"
-              fontSize="12"
-            >
-              {formatValue(maxValue, currency)}
-            </text>
-
-            <text
-              x={paddingLeft - 10}
-              y={paddingTop + plotHeight + 4}
-              textAnchor="end"
-              fill="currentColor"
-              className="text-ink-600"
-              fontSize="12"
-            >
-              0
-            </text>
-
-            {areaPath && <path d={areaPath} fill="url(#auron-chart-area)" />}
-
-            {previousPath && (
-              <path
-                d={previousPath}
-                fill="none"
-                stroke="currentColor"
-                className="text-ink-600"
-                strokeWidth="2.5"
-                strokeDasharray="7 8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-
-            {currentPath && (
-              <path
-                d={currentPath}
-                fill="none"
-                stroke="#a78bfa"
-                strokeWidth="4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-
-            {currentPoints.map((point, index) => {
-              const active = hoveredIndex === index
-              const hasValue = currentSeries[index]?.value > 0
-
-              return (
-                <g key={currentSeries[index]?.date.toISOString() ?? index}>
-                  <circle
-                    cx={point.x}
-                    cy={point.y}
-                    r={active ? 9 : hasValue ? 5 : 3}
-                    fill={active ? '#a78bfa' : '#0d0b18'}
-                    stroke="#a78bfa"
-                    strokeWidth={active ? 4 : 2}
-                    opacity={hasValue || active ? 1 : 0.55}
-                    className="transition-all"
-                  />
-                  <circle
-                    cx={point.x}
-                    cy={point.y}
-                    r="14"
-                    fill="transparent"
-                  />
-                </g>
-              )
-            })}
-
-            {hoveredPoint && (
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="block h-auto w-full select-none"
+          role="img"
+          aria-label={`${metricLabel} por dia: ${currentLabel} em colunas, ${previousLabel} em linha`}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+        >
+          {ticks.map((tick) => (
+            <g key={tick}>
               <line
-                x1={hoveredPoint.x}
-                x2={hoveredPoint.x}
-                y1={paddingTop}
-                y2={paddingTop + plotHeight}
-                stroke="#736d8f"
+                x1={paddingLeft}
+                x2={width - paddingRight}
+                y1={yFor(tick)}
+                y2={yFor(tick)}
+                stroke={GRID_COLOR}
                 strokeWidth="1"
-                strokeDasharray="4 6"
-                opacity="0.6"
               />
-            )}
+              <text
+                x={paddingLeft - 10}
+                y={yFor(tick) + 4}
+                textAnchor="end"
+                fill={AXIS_TEXT}
+                fontSize="11"
+                style={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                {formatTick(tick, currency)}
+              </text>
+            </g>
+          ))}
 
-            {labelIndexes.map((index) => {
-              const item = currentSeries[index]
-              if (!item) return null
+          {hoveredIndex !== null && (
+            <rect
+              x={paddingLeft + slot * hoveredIndex}
+              y={paddingTop}
+              width={slot}
+              height={plotHeight}
+              fill="#ffffff"
+              opacity="0.03"
+            />
+          )}
 
-              const anchor = index === 0 ? 'start' : index === currentSeries.length - 1 ? 'end' : 'middle'
+          {currentSeries.map((item, index) => {
+            const barHeight = (item.value / top) * plotHeight
+            const active = hoveredIndex === index
+            return (
+              <path
+                key={item.date.toISOString()}
+                d={columnPath(centerX(index) - barWidth / 2, yFor(item.value), barWidth, barHeight)}
+                fill={active ? BAR_ACTIVE : BAR_COLOR}
+                opacity={hoveredIndex === null || active ? 1 : 0.55}
+              />
+            )
+          })}
 
-              return (
-                <text
-                  key={item.date.toISOString()}
-                  x={xForIndex(index)}
-                  y={height - 10}
-                  textAnchor={anchor}
-                  fill="currentColor"
-                  className="text-ink-600"
-                  fontSize="12"
-                >
-                  {item.date.toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: 'short',
-                  })}
-                </text>
-              )
-            })}
-          </svg>
-        </div>
+          {previousSeries.length > 1 && (
+            <path
+              d={previousPath}
+              fill="none"
+              stroke={PREVIOUS_COLOR}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.9"
+            />
+          )}
 
-        {hoveredPoint && hoveredData && tooltipPosition && (
+          {labelIndexes.map((index) => {
+            const item = currentSeries[index]
+            if (!item) return null
+            const anchor =
+              index === 0 ? 'start' : index === currentSeries.length - 1 ? 'end' : 'middle'
+            const x =
+              index === 0
+                ? paddingLeft
+                : index === currentSeries.length - 1
+                  ? width - paddingRight
+                  : centerX(index)
+
+            return (
+              <text
+                key={item.date.toISOString()}
+                x={x}
+                y={height - 8}
+                textAnchor={anchor}
+                fill={AXIS_TEXT}
+                fontSize="11"
+              >
+                {item.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+              </text>
+            )
+          })}
+        </svg>
+
+        {hoveredData && tooltipPosition && (
           <div
-            className="pointer-events-none absolute z-30 min-w-[150px] rounded-xl border border-ink-700 bg-ink-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
+            className="pointer-events-none absolute z-30 min-w-[170px] rounded-xl border border-ink-700 bg-ink-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
             style={{
               left: tooltipPosition.x,
               top: tooltipPosition.y,
-              transform:
-                tooltipPosition.x > (containerRef.current?.clientWidth ?? 0) * 0.78
-                  ? tooltipPosition.y < 90
-                    ? 'translate(-108%, 16px)'
-                    : 'translate(-108%, -110%)'
-                  : tooltipPosition.y < 90
-                    ? 'translate(14px, 16px)'
-                    : 'translate(14px, -110%)',
+              transform: tooltipPosition.flip ? 'translate(-110%, -50%)' : 'translate(16px, -50%)',
             }}
           >
-            <p className="text-xs text-ink-500">
+            <p className="text-xs text-ink-400">
               {hoveredData.date.toLocaleDateString('pt-BR', {
+                weekday: 'short',
                 day: '2-digit',
                 month: 'long',
               })}
             </p>
-            <p className="mt-1 text-base font-semibold text-white">
-              {formatValue(hoveredData.value, currency)}
-            </p>
-            <p className="mt-0.5 text-xs text-auron-300">{metricLabel}</p>
+            <div className="mt-2 flex items-center justify-between gap-4 text-sm">
+              <span className="flex items-center gap-2 text-ink-300">
+                <span className="h-2 w-2 rounded-[2px]" style={{ background: BAR_COLOR }} />
+                {metricLabel}
+              </span>
+              <span className="font-semibold tabular text-ink-50">
+                {formatValue(hoveredData.value, currency)}
+              </span>
+            </div>
+            {hoveredPrevious && (
+              <div className="mt-1 flex items-center justify-between gap-4 text-xs">
+                <span className="flex items-center gap-2 text-ink-500">
+                  <span className="h-0.5 w-2.5 rounded-full" style={{ background: PREVIOUS_COLOR }} />
+                  {previousLabel}
+                </span>
+                <span className="tabular text-ink-400">
+                  {formatValue(hoveredPrevious.value, currency)}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
