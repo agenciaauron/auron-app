@@ -23,15 +23,20 @@ export async function syncMetaEvent({
   leadId,
   stageName,
   isWon,
+  isLost = false,
   saleValue,
 }: {
   supabase: any
   leadId: string
   stageName: string
   isWon: boolean
+  isLost?: boolean
   saleValue?: number | null
 }): Promise<MetaSyncResult | null> {
   let eventName: MetaEventName | null = null
+
+  // Etapas de perda (ex.: "Desqualificado") nunca geram evento, mesmo contendo "qualific".
+  if (isLost) return null
 
   if (isWon) {
     eventName = 'Purchase'

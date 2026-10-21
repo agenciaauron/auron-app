@@ -3,7 +3,7 @@
 import { startTransition, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CrmPipeline } from '@/components/crm-pipeline'
-import { LeadBulkDialog } from '@/components/lead-bulk-dialog'
+import { LeadDeleteDialog } from '@/components/lead-delete-dialog'
 import { LeadDetails } from '@/components/lead-details'
 import { LeadStageSelect } from '@/components/lead-stage-select'
 import { idleDays, idleLabel } from '@/lib/lead-cleanup'
@@ -55,7 +55,6 @@ type Props = {
 
 type View = 'funnel' | 'list'
 type SortOrder = 'newest' | 'oldest' | 'name'
-type BulkMode = 'disqualify' | 'delete'
 
 function formatCurrency(value: number | string | null) {
   if (value == null) return '—'
@@ -73,7 +72,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
   const [stageFilter, setStageFilter] = useState('active')
   const [idleFilter, setIdleFilter] = useState('any')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [bulkMode, setBulkMode] = useState<BulkMode | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [now] = useState(() => Date.now())
   const [sourceFilter, setSourceFilter] = useState('all')
   const [campaignFilter, setCampaignFilter] = useState('all')
@@ -184,7 +183,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
   }
 
   function handleBulkDone() {
-    setBulkMode(null)
+    setConfirmDelete(false)
     setSelected(new Set())
     startTransition(() => {
       router.refresh()
@@ -264,7 +263,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
                 onChange={(event) => setStageFilter(event.target.value)}
                 className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-300 outline-none"
               >
-                <option value="active">Ativas (sem perdidos)</option>
+                <option value="active">Ativas (sem desqualificados)</option>
                 <option value="all">Todas</option>
                 {stages.map((stage) => (
                   <option key={stage.id} value={stage.id}>
@@ -368,15 +367,8 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
               <div className="ml-auto flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setBulkMode('disqualify')}
-                  className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-amber-500"
-                >
-                  Desqualificar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBulkMode('delete')}
-                  className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-300 transition hover:bg-red-500/10"
+                  onClick={() => setConfirmDelete(true)}
+                  className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-500"
                 >
                   Excluir
                 </button>
@@ -522,11 +514,10 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
         </>
       )}
 
-      {bulkMode && (
-        <LeadBulkDialog
-          mode={bulkMode}
+      {confirmDelete && (
+        <LeadDeleteDialog
           leadIds={visibleSelected.map((lead) => lead.id)}
-          onClose={() => setBulkMode(null)}
+          onClose={() => setConfirmDelete(false)}
           onDone={handleBulkDone}
         />
       )}

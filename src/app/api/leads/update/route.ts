@@ -119,6 +119,7 @@ export async function PATCH(request: Request) {
     leadId,
     stageName: stage.name,
     isWon: Boolean(stage.is_won),
+    isLost: Boolean(stage.is_lost),
     saleValue: stage.is_won ? parsedSaleValue : null,
   })
 

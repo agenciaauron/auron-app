@@ -9,6 +9,9 @@ export const LOST_REASONS = [
 
 export const IDLE_DAYS_DEFAULT = 3
 
+// Novo lead e Desqualificado mostram só leads ativos nesse período; o resto fica recolhido.
+export const RECENT_DAYS = 10
+
 // Última atividade do lead: a mensagem mais recente dele ou a entrada no CRM.
 export function lastActivity(lead: {
   created_at: string

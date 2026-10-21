@@ -246,7 +246,7 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
     if (target === 'lost') return stage.is_lost
 
     const searchable = normalize(`${stage.slug} ${stage.name}`)
-    if (target === 'qualified') return searchable.includes('qualific')
+    if (target === 'qualified') return !stage.is_lost && searchable.includes('qualific')
     return searchable.includes('reuniao')
   }
 
