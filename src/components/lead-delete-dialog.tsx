@@ -46,12 +46,12 @@ export function LeadDeleteDialog({ leadIds, title, onClose, onDone }: Props) {
         if (event.target === event.currentTarget && !loading) onClose()
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+      <div className="w-full max-w-md rounded-2xl border border-ink-800 bg-ink-900 p-6">
         <p className="text-sm text-red-400">Excluir permanentemente</p>
-        <h2 className="mt-1 text-xl font-semibold text-zinc-100">
+        <h2 className="mt-1 text-xl font-semibold text-ink-100">
           {title ?? `${count} ${plural} selecionado${count === 1 ? '' : 's'}`}
         </h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">
+        <p className="mt-2 text-sm leading-6 text-ink-400">
           {count === 1 ? 'O lead e o histórico dele serão apagados' : 'Os leads e o histórico deles serão apagados'}{' '}
           e não poderão ser recuperados. Se a pessoa mandar mensagem de novo, ela volta como lead novo.
         </p>
@@ -63,7 +63,7 @@ export function LeadDeleteDialog({ leadIds, title, onClose, onDone }: Props) {
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="flex-1 rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-60"
+            className="flex-1 rounded-lg border border-ink-700 px-4 py-2.5 text-sm text-ink-300 transition hover:bg-ink-800 disabled:opacity-60"
           >
             Cancelar
           </button>

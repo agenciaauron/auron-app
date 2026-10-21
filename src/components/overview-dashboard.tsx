@@ -1,7 +1,15 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { BadgeCheck, CircleDollarSign, Handshake, Inbox, type LucideIcon } from 'lucide-react'
 import { InteractivePerformanceChart } from '@/components/interactive-performance-chart'
+
+const metricIcons: Partial<Record<Metric, LucideIcon>> = {
+  leads: Inbox,
+  qualified: BadgeCheck,
+  sales: Handshake,
+  revenue: CircleDollarSign,
+}
 
 type Stage = {
   id: string
@@ -207,7 +215,11 @@ function Comparison({ current, previous }: { current: number; previous: number }
   const positive = change >= 0
 
   return (
-    <span className={`text-xs ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular ${
+        positive ? 'bg-emerald-400/10 text-emerald-300' : 'bg-rose-400/10 text-rose-300'
+      }`}
+    >
       {positive ? '↑' : '↓'} {Math.abs(change).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
     </span>
   )
@@ -373,9 +385,9 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
     <>
       <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-sm font-medium text-purple-400">Visão geral</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Desempenho comercial</h1>
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-auron-400">Visão geral</p>
+          <h1 className="mt-1.5 font-display text-[28px] font-semibold tracking-tight text-ink-50">Desempenho comercial</h1>
+          <p className="mt-2 text-sm text-ink-500">
             Compare a evolução dos seus leads e resultados ao longo do tempo.
           </p>
         </div>
@@ -383,34 +395,34 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           {period === 'custom' && (
             <>
-              <label className="text-xs text-zinc-500">
+              <label className="text-xs text-ink-500">
                 <span className="mb-1 block">De</span>
                 <input
                   type="date"
                   value={customStart}
                   onChange={(event) => setCustomStart(event.target.value)}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200 outline-none"
+                  className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-200 outline-none"
                 />
               </label>
 
-              <label className="text-xs text-zinc-500">
+              <label className="text-xs text-ink-500">
                 <span className="mb-1 block">Até</span>
                 <input
                   type="date"
                   value={customEnd}
                   onChange={(event) => setCustomEnd(event.target.value)}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200 outline-none"
+                  className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-200 outline-none"
                 />
               </label>
             </>
           )}
 
-          <label className="text-xs text-zinc-500">
+          <label className="text-xs text-ink-500">
             <span className="mb-1 block">Período</span>
             <select
               value={period}
               onChange={(event) => setPeriod(event.target.value as Period)}
-              className="min-w-[170px] rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-200 outline-none"
+              className="min-w-[170px] rounded-lg border border-ink-800 bg-ink-900 px-4 py-2.5 text-sm text-ink-200 outline-none"
             >
               <option value="7d">Últimos 7 dias</option>
               <option value="30d">Últimos 30 dias</option>
@@ -429,33 +441,41 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
             onClick={() => setMetric(card.metric)}
             className={`rounded-2xl border p-5 text-left transition ${
               metric === card.metric
-                ? 'border-purple-500/50 bg-purple-500/5'
-                : 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-700'
+                ? 'border-auron-500/50 bg-auron-500/5'
+                : 'border-ink-800 bg-ink-900/60 hover:border-ink-700'
             }`}
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-zinc-500">{card.label}</p>
+              <p className="flex items-center gap-2 text-sm text-ink-400">
+                {(() => {
+                  const Icon = metricIcons[card.metric]
+                  return Icon ? (
+                    <Icon className="h-4 w-4 text-auron-300" strokeWidth={1.75} aria-hidden />
+                  ) : null
+                })()}
+                {card.label}
+              </p>
               <Comparison current={card.value} previous={card.previous} />
             </div>
-            <p className="mt-4 text-3xl font-semibold tracking-tight">
+            <p className="mt-4 font-display text-3xl font-semibold tracking-tight tabular text-ink-50">
               {card.formatter(card.value)}
             </p>
-            <p className="mt-2 text-xs text-zinc-600">comparado ao período anterior</p>
+            <p className="mt-2 text-xs text-ink-600">comparado ao período anterior</p>
           </button>
         ))}
       </section>
 
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 sm:p-6">
+      <section className="rounded-2xl border border-ink-800 bg-ink-900/50 p-5 sm:p-6">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-sm text-zinc-500">Evolução no período</p>
+            <p className="text-sm text-ink-500">Evolução no período</p>
             <div className="mt-2 flex flex-wrap items-end gap-3">
-              <p className="text-3xl font-semibold tracking-tight">
+              <p className="font-display text-3xl font-semibold tracking-tight tabular text-ink-50">
                 {metricFormatter(currentTotal)}
               </p>
               <Comparison current={currentTotal} previous={previousTotal} />
             </div>
-            <p className="mt-2 text-xs text-zinc-600">
+            <p className="mt-2 text-xs text-ink-600">
               {range.currentLabel} comparado com {range.previousLabel.toLowerCase()}
             </p>
           </div>
@@ -463,7 +483,7 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
           <select
             value={metric}
             onChange={(event) => setMetric(event.target.value as Metric)}
-            className="rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm text-zinc-200 outline-none"
+            className="rounded-lg border border-ink-800 bg-ink-950 px-4 py-2.5 text-sm text-ink-200 outline-none"
           >
             {metricOptions.map((option) => (
               <option key={option.value} value={option.value}>

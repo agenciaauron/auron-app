@@ -22,7 +22,7 @@ export default async function DashboardPage() {
 
   if (!membership) {
     return (
-      <main className="min-h-screen bg-zinc-950 p-10 text-white">
+      <main className="min-h-screen bg-ink-950 p-10 text-white">
         Nenhuma empresa vinculada.
       </main>
     )

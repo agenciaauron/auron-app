@@ -1,8 +1,9 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, ReactNode, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { LOST_REASONS } from '@/lib/lead-cleanup'
+import { MessageCircle, X } from 'lucide-react'
+import { LOST_REASONS, formatPhone, whatsappUrl } from '@/lib/lead-cleanup'
 
 type Stage = {
   id: string
@@ -51,9 +52,11 @@ type Props = {
   lead: Lead
   stages: Stage[]
   history: HistoryItem[]
+  triggerLabel?: ReactNode
+  triggerClassName?: string
 }
 
-export function LeadDetails({ lead, stages, history }: Props) {
+export function LeadDetails({ lead, stages, history, triggerLabel, triggerClassName }: Props) {
   const router = useRouter()
 
   const [open, setOpen] = useState(false)
@@ -185,38 +188,67 @@ export function LeadDetails({ lead, stages, history }: Props) {
       <button
         type="button"
         onClick={openDetails}
-        className="mt-3 w-full rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900"
+        className={
+          triggerClassName ??
+          'mt-3 w-full rounded-md border border-ink-700 px-3 py-2 text-sm text-ink-300 transition hover:bg-ink-900'
+        }
       >
-        Ver ficha
+        {triggerLabel ?? 'Ver ficha'}
       </button>
     )
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4">
-      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-purple-400">Ficha do lead</p>
-            <h2 className="mt-1 text-2xl font-semibold">{lead.name}</h2>
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-ink-1000/70 backdrop-blur-[2px]"
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !loading) setOpen(false)
+      }}
+    >
+      <div className="pipeline-scrollbar h-full w-full max-w-lg overflow-y-auto border-l border-ink-800 bg-ink-950 p-6 shadow-2xl shadow-black/50">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-auron-400">
+              Ficha do lead
+            </p>
+            <h2 className="mt-1.5 truncate font-display text-2xl font-semibold text-ink-50">
+              {lead.name}
+            </h2>
+            {lead.phone && (
+              <p className="mt-1 font-mono text-sm text-ink-400">{formatPhone(lead.phone)}</p>
+            )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="text-sm text-zinc-400 hover:text-white"
-          >
-            Fechar
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {whatsappUrl(lead.phone) && (
+              <a
+                href={whatsappUrl(lead.phone) ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 rounded-lg bg-whatsapp/15 px-3 py-2 text-sm font-semibold text-whatsapp transition hover:bg-whatsapp/25"
+              >
+                <MessageCircle className="h-4 w-4" strokeWidth={2} aria-hidden />
+                WhatsApp
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Fechar ficha"
+              className="rounded-lg p-2 text-ink-400 transition hover:bg-ink-800 hover:text-ink-100"
+            >
+              <X className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+            </button>
+          </div>
         </div>
 
         {lead.last_message && (
-          <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
-            <p className="text-xs text-zinc-500">
+          <div className="mb-5 rounded-xl border border-ink-800 bg-ink-950/70 p-4">
+            <p className="text-xs text-ink-500">
               Última mensagem do lead
               {lead.last_message_at && ` · ${formatDate(lead.last_message_at)}`}
             </p>
-            <p className="mt-2 text-sm leading-6 text-zinc-200">“{lead.last_message}”</p>
+            <p className="mt-2 text-sm leading-6 text-ink-200">“{lead.last_message}”</p>
           </div>
         )}
 
@@ -226,14 +258,14 @@ export function LeadDetails({ lead, stages, history }: Props) {
             required
             defaultValue={lead.name}
             placeholder="Nome"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-purple-500"
+            className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
           />
 
           <input
             name="phone"
             defaultValue={lead.phone ?? ''}
             placeholder="Telefone"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-purple-500"
+            className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
           />
 
           <input
@@ -241,7 +273,7 @@ export function LeadDetails({ lead, stages, history }: Props) {
             type="email"
             defaultValue={lead.email ?? ''}
             placeholder="E-mail"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-purple-500"
+            className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
           />
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -249,24 +281,24 @@ export function LeadDetails({ lead, stages, history }: Props) {
               name="source"
               defaultValue={lead.source ?? ''}
               placeholder="Origem"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-purple-500"
+              className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
             />
 
             <input
               name="campaign"
               defaultValue={lead.campaign ?? ''}
               placeholder="Campanha"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-purple-500"
+              className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs text-zinc-500">Etapa atual</label>
+            <label className="mb-1.5 block text-xs text-ink-500">Etapa atual</label>
             <select
               name="stageId"
               value={selectedStageId}
               onChange={(event) => setSelectedStageId(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-purple-500"
+              className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
             >
               {stages.map((stage) => (
                 <option key={stage.id} value={stage.id}>
@@ -284,7 +316,7 @@ export function LeadDetails({ lead, stages, history }: Props) {
               <select
                 name="lostReason"
                 defaultValue={lead.lost_reason ?? ''}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-red-500"
+                className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-red-500"
               >
                 <option value="">Não informado</option>
                 {LOST_REASONS.map((reason) => (
@@ -308,27 +340,27 @@ export function LeadDetails({ lead, stages, history }: Props) {
                 min="0"
                 defaultValue={lead.sale_value ?? ''}
                 placeholder="R$ 0,00"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-emerald-500"
+                className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-emerald-500"
               />
-              <p className="mt-2 text-xs text-zinc-500">
+              <p className="mt-2 text-xs text-ink-500">
                 Esse valor alimenta automaticamente os indicadores de vendas da Visão geral e o evento Purchase da Meta.
               </p>
             </div>
           )}
 
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
+          <div className="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-zinc-200">Meta</p>
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="text-sm font-medium text-ink-200">Meta</p>
+                <p className="mt-1 text-xs text-ink-500">
                   Retorno dos eventos enviados pelo CRM
                 </p>
               </div>
               <span
                 className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                   metaEligible
-                    ? 'bg-purple-500/10 text-purple-300'
-                    : 'bg-zinc-800 text-zinc-500'
+                    ? 'bg-auron-500/10 text-auron-300'
+                    : 'bg-ink-800 text-ink-500'
                 }`}
               >
                 {metaEligible ? 'Anúncio vinculado' : 'Sem CTWA'}
@@ -338,24 +370,24 @@ export function LeadDetails({ lead, stages, history }: Props) {
             {metaEligible ? (
               <div className="mt-4 space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-zinc-400">QualifiedLead</span>
+                  <span className="text-ink-400">QualifiedLead</span>
                   {lead.meta_qualified_sent_at ? (
                     <span className="text-right text-emerald-400">
                       Enviado · {formatDate(lead.meta_qualified_sent_at)}
                     </span>
                   ) : (
-                    <span className="text-zinc-600">Ainda não enviado</span>
+                    <span className="text-ink-600">Ainda não enviado</span>
                   )}
                 </div>
 
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-zinc-400">Purchase</span>
+                  <span className="text-ink-400">Purchase</span>
                   {lead.meta_purchase_sent_at ? (
                     <span className="text-right text-emerald-400">
                       Enviado · {formatDate(lead.meta_purchase_sent_at)}
                     </span>
                   ) : (
-                    <span className="text-zinc-600">Ainda não enviado</span>
+                    <span className="text-ink-600">Ainda não enviado</span>
                   )}
                 </div>
 
@@ -371,7 +403,7 @@ export function LeadDetails({ lead, stages, history }: Props) {
                 )}
               </div>
             ) : (
-              <p className="mt-4 text-xs leading-5 text-zinc-500">
+              <p className="mt-4 text-xs leading-5 text-ink-500">
                 Esse lead não possui ctwa_clid. Eventos de conversão não serão enviados para a Meta porque ele não veio de um anúncio Click-to-WhatsApp.
               </p>
             )}
@@ -382,14 +414,14 @@ export function LeadDetails({ lead, stages, history }: Props) {
             rows={5}
             defaultValue={lead.notes ?? ''}
             placeholder="Observações sobre o lead"
-            className="w-full resize-none rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-purple-500"
+            className="w-full resize-none rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
           />
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 
           <button
             disabled={loading}
-            className="w-full rounded-lg bg-purple-600 px-4 py-3 font-medium transition hover:bg-purple-500 disabled:opacity-60"
+            className="w-full rounded-lg bg-auron-600 px-4 py-3 font-medium transition hover:bg-auron-500 disabled:opacity-60"
           >
             {loading ? 'Salvando...' : 'Salvar alterações'}
           </button>
@@ -404,16 +436,16 @@ export function LeadDetails({ lead, stages, history }: Props) {
           {deleting ? 'Excluindo...' : 'Excluir lead'}
         </button>
 
-        <div className="mt-8 border-t border-zinc-800 pt-6">
+        <div className="mt-8 border-t border-ink-800 pt-6">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="font-semibold">Histórico</h3>
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-ink-500">
               {history.length} {history.length === 1 ? 'evento' : 'eventos'}
             </span>
           </div>
 
           {history.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-zinc-700 p-4 text-sm text-zinc-500">
+            <div className="rounded-lg border border-dashed border-ink-700 p-4 text-sm text-ink-500">
               Nenhum histórico registrado ainda.
             </div>
           ) : (
@@ -421,10 +453,10 @@ export function LeadDetails({ lead, stages, history }: Props) {
               {history.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-lg border border-zinc-800 bg-zinc-950 p-4"
+                  className="rounded-lg border border-ink-800 bg-ink-950 p-4"
                 >
-                  <p className="text-sm text-zinc-200">{getHistoryText(item)}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{formatDate(item.created_at)}</p>
+                  <p className="text-sm text-ink-200">{getHistoryText(item)}</p>
+                  <p className="mt-1 text-xs text-ink-500">{formatDate(item.created_at)}</p>
                 </div>
               ))}
             </div>

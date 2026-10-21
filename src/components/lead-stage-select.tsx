@@ -65,7 +65,7 @@ export function LeadStageSelect({
       value={stageId}
       disabled={loading}
       onChange={(event) => changeStage(event.target.value)}
-      className="mt-3 w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white outline-none disabled:opacity-60"
+      className="mt-3 w-full rounded-md border border-ink-700 bg-ink-900 px-3 py-2 text-sm text-white outline-none disabled:opacity-60"
     >
       {stages.map((stage) => (
         <option key={stage.id} value={stage.id}>

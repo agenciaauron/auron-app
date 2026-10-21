@@ -64,10 +64,14 @@ function makeSmoothPath(points: Point[]) {
     const p2 = points[index + 1]
     const p3 = points[index + 2] ?? p2
 
+    // Os pontos de controle ficam entre p1 e p2 no eixo Y, então a curva nunca
+    // passa do valor real (antes ela descia abaixo de zero em dias sem lead).
+    const minY = Math.min(p1.y, p2.y)
+    const maxY = Math.max(p1.y, p2.y)
     const cp1x = p1.x + (p2.x - p0.x) / 6
-    const cp1y = p1.y + (p2.y - p0.y) / 6
+    const cp1y = clamp(p1.y + (p2.y - p0.y) / 6, minY, maxY)
     const cp2x = p2.x - (p3.x - p1.x) / 6
-    const cp2y = p2.y - (p3.y - p1.y) / 6
+    const cp2y = clamp(p2.y - (p3.y - p1.y) / 6, minY, maxY)
 
     path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
   }
@@ -167,21 +171,21 @@ export function InteractivePerformanceChart({
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-5 text-xs">
-        <div className="flex items-center gap-2 text-zinc-400">
-          <span className="h-0.5 w-6 rounded-full bg-purple-500" />
+        <div className="flex items-center gap-2 text-ink-400">
+          <span className="h-0.5 w-6 rounded-full bg-auron-500" />
           {currentLabel}
         </div>
-        <div className="flex items-center gap-2 text-zinc-500">
-          <span className="w-6 border-t border-dashed border-zinc-500" />
+        <div className="flex items-center gap-2 text-ink-500">
+          <span className="w-6 border-t border-dashed border-ink-500" />
           {previousLabel}
         </div>
       </div>
 
       <div ref={containerRef} className="relative">
-        <div className="overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950/70 px-2 py-3">
+        <div className="overflow-hidden rounded-2xl border border-ink-800/80 bg-ink-950/70 px-2 py-3">
           <svg
             viewBox={`0 0 ${width} ${height}`}
-            className="h-[320px] w-full select-none"
+            className="block h-auto w-full select-none"
             role="img"
             aria-label={`Gráfico de ${metricLabel}`}
             onMouseMove={handleMouseMove}
@@ -189,8 +193,8 @@ export function InteractivePerformanceChart({
           >
             <defs>
               <linearGradient id="auron-chart-area" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#a855f7" stopOpacity="0.24" />
-                <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
+                <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.24" />
+                <stop offset="100%" stopColor="#a78bfa" stopOpacity="0" />
               </linearGradient>
             </defs>
 
@@ -204,7 +208,7 @@ export function InteractivePerformanceChart({
                   y1={y}
                   y2={y}
                   stroke="currentColor"
-                  className="text-zinc-800/80"
+                  className="text-ink-800/80"
                   strokeWidth="1"
                 />
               )
@@ -215,7 +219,7 @@ export function InteractivePerformanceChart({
               y={paddingTop + 4}
               textAnchor="end"
               fill="currentColor"
-              className="text-zinc-600"
+              className="text-ink-600"
               fontSize="12"
             >
               {formatValue(maxValue, currency)}
@@ -226,7 +230,7 @@ export function InteractivePerformanceChart({
               y={paddingTop + plotHeight + 4}
               textAnchor="end"
               fill="currentColor"
-              className="text-zinc-600"
+              className="text-ink-600"
               fontSize="12"
             >
               0
@@ -239,7 +243,7 @@ export function InteractivePerformanceChart({
                 d={previousPath}
                 fill="none"
                 stroke="currentColor"
-                className="text-zinc-600"
+                className="text-ink-600"
                 strokeWidth="2.5"
                 strokeDasharray="7 8"
                 strokeLinecap="round"
@@ -251,7 +255,7 @@ export function InteractivePerformanceChart({
               <path
                 d={currentPath}
                 fill="none"
-                stroke="#a855f7"
+                stroke="#a78bfa"
                 strokeWidth="4"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -268,8 +272,8 @@ export function InteractivePerformanceChart({
                     cx={point.x}
                     cy={point.y}
                     r={active ? 9 : hasValue ? 5 : 3}
-                    fill={active ? '#a855f7' : '#09090b'}
-                    stroke="#a855f7"
+                    fill={active ? '#a78bfa' : '#0d0b18'}
+                    stroke="#a78bfa"
                     strokeWidth={active ? 4 : 2}
                     opacity={hasValue || active ? 1 : 0.55}
                     className="transition-all"
@@ -290,7 +294,7 @@ export function InteractivePerformanceChart({
                 x2={hoveredPoint.x}
                 y1={paddingTop}
                 y2={paddingTop + plotHeight}
-                stroke="#71717a"
+                stroke="#736d8f"
                 strokeWidth="1"
                 strokeDasharray="4 6"
                 opacity="0.6"
@@ -310,7 +314,7 @@ export function InteractivePerformanceChart({
                   y={height - 10}
                   textAnchor={anchor}
                   fill="currentColor"
-                  className="text-zinc-600"
+                  className="text-ink-600"
                   fontSize="12"
                 >
                   {item.date.toLocaleDateString('pt-BR', {
@@ -325,7 +329,7 @@ export function InteractivePerformanceChart({
 
         {hoveredPoint && hoveredData && tooltipPosition && (
           <div
-            className="pointer-events-none absolute z-30 min-w-[150px] rounded-xl border border-zinc-700 bg-zinc-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
+            className="pointer-events-none absolute z-30 min-w-[150px] rounded-xl border border-ink-700 bg-ink-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
             style={{
               left: tooltipPosition.x,
               top: tooltipPosition.y,
@@ -339,7 +343,7 @@ export function InteractivePerformanceChart({
                     : 'translate(14px, -110%)',
             }}
           >
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-ink-500">
               {hoveredData.date.toLocaleDateString('pt-BR', {
                 day: '2-digit',
                 month: 'long',
@@ -348,7 +352,7 @@ export function InteractivePerformanceChart({
             <p className="mt-1 text-base font-semibold text-white">
               {formatValue(hoveredData.value, currency)}
             </p>
-            <p className="mt-0.5 text-xs text-purple-300">{metricLabel}</p>
+            <p className="mt-0.5 text-xs text-auron-300">{metricLabel}</p>
           </div>
         )}
       </div>

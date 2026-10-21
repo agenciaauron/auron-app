@@ -6,7 +6,7 @@ import { CrmPipeline } from '@/components/crm-pipeline'
 import { LeadDeleteDialog } from '@/components/lead-delete-dialog'
 import { LeadDetails } from '@/components/lead-details'
 import { LeadStageSelect } from '@/components/lead-stage-select'
-import { idleDays, idleLabel } from '@/lib/lead-cleanup'
+import { formatPhone, idleDays, idleLabel } from '@/lib/lead-cleanup'
 
 type Stage = {
   id: string
@@ -205,7 +205,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
       return 'border-red-500/20 bg-red-500/10 text-red-300'
     }
 
-    return 'border-purple-500/20 bg-purple-500/10 text-purple-300'
+    return 'border-auron-500/20 bg-auron-500/10 text-auron-300'
   }
 
   function clearFilters() {
@@ -219,14 +219,14 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
   return (
     <>
       <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="inline-flex w-fit rounded-lg border border-zinc-800 bg-zinc-900 p-1">
+        <div className="inline-flex w-fit rounded-lg border border-ink-800 bg-ink-900 p-1">
           <button
             type="button"
             onClick={() => setView('funnel')}
             className={`rounded-md px-4 py-2 text-sm transition ${
               view === 'funnel'
-                ? 'bg-purple-600 text-white'
-                : 'text-zinc-400 hover:text-zinc-200'
+                ? 'bg-auron-600 text-white'
+                : 'text-ink-400 hover:text-ink-200'
             }`}
           >
             Funil
@@ -236,8 +236,8 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
             onClick={() => setView('list')}
             className={`rounded-md px-4 py-2 text-sm transition ${
               view === 'list'
-                ? 'bg-purple-600 text-white'
-                : 'text-zinc-400 hover:text-zinc-200'
+                ? 'bg-auron-600 text-white'
+                : 'text-ink-400 hover:text-ink-200'
             }`}
           >
             Lista
@@ -246,22 +246,22 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
 
         {view === 'list' && (
           <div className="flex flex-wrap items-end gap-2">
-            <label className="text-xs text-zinc-500">
+            <label className="text-xs text-ink-500">
               <span className="mb-1 block">Buscar</span>
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Nome, telefone, e-mail..."
-                className="min-w-[250px] rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-purple-500"
+                className="min-w-[250px] rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-200 outline-none placeholder:text-ink-600 focus:border-auron-500"
               />
             </label>
 
-            <label className="text-xs text-zinc-500">
+            <label className="text-xs text-ink-500">
               <span className="mb-1 block">Etapa</span>
               <select
                 value={stageFilter}
                 onChange={(event) => setStageFilter(event.target.value)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-300 outline-none"
+                className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-300 outline-none"
               >
                 <option value="active">Ativas (sem desqualificados)</option>
                 <option value="all">Todas</option>
@@ -273,12 +273,12 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
               </select>
             </label>
 
-            <label className="text-xs text-zinc-500">
+            <label className="text-xs text-ink-500">
               <span className="mb-1 block">Sem atividade</span>
               <select
                 value={idleFilter}
                 onChange={(event) => setIdleFilter(event.target.value)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-300 outline-none"
+                className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-300 outline-none"
               >
                 <option value="any">Qualquer</option>
                 <option value="1">Há 1+ dia</option>
@@ -288,12 +288,12 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
               </select>
             </label>
 
-            <label className="text-xs text-zinc-500">
+            <label className="text-xs text-ink-500">
               <span className="mb-1 block">Origem</span>
               <select
                 value={sourceFilter}
                 onChange={(event) => setSourceFilter(event.target.value)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-300 outline-none"
+                className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-300 outline-none"
               >
                 <option value="all">Todas</option>
                 {sourceOptions.map((source) => (
@@ -304,12 +304,12 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
               </select>
             </label>
 
-            <label className="text-xs text-zinc-500">
+            <label className="text-xs text-ink-500">
               <span className="mb-1 block">Campanha</span>
               <select
                 value={campaignFilter}
                 onChange={(event) => setCampaignFilter(event.target.value)}
-                className="max-w-[190px] rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-300 outline-none"
+                className="max-w-[190px] rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-300 outline-none"
               >
                 <option value="all">Todas</option>
                 {campaignOptions.map((campaign) => (
@@ -320,12 +320,12 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
               </select>
             </label>
 
-            <label className="text-xs text-zinc-500">
+            <label className="text-xs text-ink-500">
               <span className="mb-1 block">Ordenar</span>
               <select
                 value={sortOrder}
                 onChange={(event) => setSortOrder(event.target.value as SortOrder)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-300 outline-none"
+                className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-300 outline-none"
               >
                 <option value="newest">Mais recentes</option>
                 <option value="oldest">Mais antigos</option>
@@ -341,8 +341,8 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-zinc-500">
-              <span className="font-medium text-zinc-200">{filteredLeads.length}</span>{' '}
+            <p className="text-sm text-ink-500">
+              <span className="font-medium text-ink-200">{filteredLeads.length}</span>{' '}
               {filteredLeads.length === 1 ? 'lead encontrado' : 'leads encontrados'}
               {filteredLeads.length !== leads.length && ` de ${leads.length}`}
             </p>
@@ -351,7 +351,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
               <button
                 type="button"
                 onClick={clearFilters}
-                className="text-sm text-purple-400 transition hover:text-purple-300"
+                className="text-sm text-auron-400 transition hover:text-auron-300"
               >
                 Limpar filtros
               </button>
@@ -359,8 +359,8 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
           </div>
 
           {visibleSelected.length > 0 && (
-            <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-purple-500/30 bg-zinc-900 px-4 py-3 shadow-lg">
-              <span className="text-sm text-zinc-200">
+            <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-auron-500/30 bg-ink-900 px-4 py-3 shadow-lg">
+              <span className="text-sm text-ink-200">
                 <span className="font-semibold">{visibleSelected.length}</span>{' '}
                 {visibleSelected.length === 1 ? 'selecionado' : 'selecionados'}
               </span>
@@ -375,7 +375,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
                 <button
                   type="button"
                   onClick={() => setSelected(new Set())}
-                  className="rounded-lg px-3 py-2 text-sm text-zinc-400 transition hover:text-zinc-200"
+                  className="rounded-lg px-3 py-2 text-sm text-ink-400 transition hover:text-ink-200"
                 >
                   Limpar seleção
                 </button>
@@ -383,9 +383,9 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
             </div>
           )}
 
-          <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-900/45">
+          <div className="overflow-x-auto rounded-2xl border border-ink-800 bg-ink-900/45">
             <table className="w-full min-w-[1120px] text-left text-sm">
-              <thead className="border-b border-zinc-800 text-xs uppercase tracking-wide text-zinc-600">
+              <thead className="border-b border-ink-800 text-xs uppercase tracking-wide text-ink-600">
                 <tr>
                   <th className="w-10 py-4 pl-5">
                     <input
@@ -393,7 +393,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
                       aria-label="Selecionar todos os leads filtrados"
                       checked={allVisibleSelected}
                       onChange={toggleAllVisible}
-                      className="h-4 w-4 accent-purple-600"
+                      className="h-4 w-4 accent-auron-600"
                     />
                   </th>
                   <th className="px-5 py-4 font-medium">Lead</th>
@@ -407,7 +407,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-zinc-800/80">
+              <tbody className="divide-y divide-ink-800/80">
                 {filteredLeads.map((lead) => {
                   const leadHistory = history.filter(
                     (item) => item.lead_id === lead.id
@@ -419,8 +419,8 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
                   return (
                     <tr
                       key={lead.id}
-                      className={`transition hover:bg-zinc-900/80 ${
-                        selected.has(lead.id) ? 'bg-purple-500/5' : ''
+                      className={`transition hover:bg-ink-900/80 ${
+                        selected.has(lead.id) ? 'bg-auron-500/5' : ''
                       }`}
                     >
                       <td className="py-4 pl-5">
@@ -429,32 +429,32 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
                           aria-label={`Selecionar ${lead.name}`}
                           checked={selected.has(lead.id)}
                           onChange={() => toggleLead(lead.id)}
-                          className="h-4 w-4 accent-purple-600"
+                          className="h-4 w-4 accent-auron-600"
                         />
                       </td>
                       <td className="max-w-[260px] px-5 py-4">
-                        <p className="font-medium text-zinc-200">{lead.name}</p>
-                        <p className="mt-1 text-xs text-zinc-500">
-                          {lead.phone || lead.email || 'Sem contato informado'}
+                        <p className="font-medium text-ink-200">{lead.name}</p>
+                        <p className="mt-1 text-xs text-ink-500">
+                          {lead.phone ? formatPhone(lead.phone) : lead.email || 'Sem contato informado'}
                         </p>
                         {lead.last_message && (
-                          <p className="mt-1 truncate text-xs text-zinc-600">
+                          <p className="mt-1 truncate text-xs text-ink-600">
                             “{lead.last_message}”
                           </p>
                         )}
                       </td>
 
-                      <td className="px-5 py-4 text-zinc-400">
+                      <td className="px-5 py-4 text-ink-400">
                         {lead.source || '—'}
                       </td>
 
-                      <td className="max-w-[190px] truncate px-5 py-4 text-zinc-500">
+                      <td className="max-w-[190px] truncate px-5 py-4 text-ink-500">
                         {lead.campaign || '—'}
                       </td>
 
-                      <td className="px-5 py-4 text-zinc-500">
+                      <td className="px-5 py-4 text-ink-500">
                         {new Date(lead.created_at).toLocaleDateString('pt-BR')}
-                        <p className="mt-1 text-xs text-zinc-600">
+                        <p className="mt-1 text-xs text-ink-600">
                           Ativo {idleLabel(idleDays(lead, now))}
                         </p>
                       </td>
@@ -478,7 +478,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
                             {formatCurrency(lead.sale_value)}
                           </span>
                         ) : (
-                          <span className="text-zinc-600">—</span>
+                          <span className="text-ink-600">—</span>
                         )}
                       </td>
 
@@ -503,7 +503,7 @@ export function LeadsWorkspace({ stages, leads, history }: Props) {
 
                 {filteredLeads.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-5 py-14 text-center text-zinc-600">
+                    <td colSpan={9} className="px-5 py-14 text-center text-ink-600">
                       Nenhum lead encontrado com esses filtros.
                     </td>
                   </tr>

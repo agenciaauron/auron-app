@@ -36,11 +36,11 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-6">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-8">
+    <main className="flex min-h-screen items-center justify-center bg-ink-950 px-6">
+      <div className="w-full max-w-md rounded-2xl border border-ink-800 bg-ink-900 p-8">
 
         <div className="mb-8">
-          <p className="text-sm font-medium text-purple-400">
+          <p className="text-sm font-medium text-auron-400">
             Auron Marketing
           </p>
 
@@ -48,7 +48,7 @@ export default function LoginPage() {
             Auron App
           </h1>
 
-          <p className="mt-2 text-sm text-zinc-400">
+          <p className="mt-2 text-sm text-ink-400">
             Entre para acessar seu painel.
           </p>
         </div>
@@ -58,7 +58,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="email"
-              className="mb-2 block text-sm text-zinc-300"
+              className="mb-2 block text-sm text-ink-300"
             >
               E-mail
             </label>
@@ -69,14 +69,14 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white outline-none"
+              className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-white outline-none"
             />
           </div>
 
           <div>
             <label
               htmlFor="password"
-              className="mb-2 block text-sm text-zinc-300"
+              className="mb-2 block text-sm text-ink-300"
             >
               Senha
             </label>
@@ -87,7 +87,7 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white outline-none"
+              className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-white outline-none"
             />
           </div>
 
@@ -100,7 +100,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-purple-600 px-4 py-3 font-medium text-white disabled:opacity-60"
+            className="w-full rounded-lg bg-auron-600 px-4 py-3 font-medium text-white disabled:opacity-60"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>

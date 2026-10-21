@@ -23,7 +23,7 @@ export default async function LeadsPage() {
 
   if (!membership) {
     return (
-      <main className="min-h-screen bg-zinc-950 p-10 text-white">
+      <main className="min-h-screen bg-ink-950 p-10 text-white">
         Nenhuma empresa vinculada.
       </main>
     )
@@ -72,11 +72,11 @@ export default async function LeadsPage() {
     >
       <header className="mb-7 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-purple-400">Leads</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-auron-400">Leads</p>
+          <h1 className="mt-1.5 font-display text-[28px] font-semibold tracking-tight text-ink-50">
             Gestão de leads
           </h1>
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="mt-2 text-sm text-ink-500">
             Trabalhe o funil comercial ou consulte toda a sua base em lista.
           </p>
         </div>
