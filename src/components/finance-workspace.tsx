@@ -8,6 +8,8 @@ type FinanceClient = {
   name: string
   monthly_amount: number | string
   due_day: number
+  billing_cycle: 'monthly' | 'biweekly'
+  second_due_day: number | null
   status: 'active' | 'paused' | 'cancelled'
   notes: string | null
   created_at: string
@@ -18,6 +20,7 @@ type FinancePayment = {
   id: string
   finance_client_id: string
   competence: string
+  installment: number | null
   due_date: string
   paid_at: string
   amount: number | string
@@ -75,11 +78,58 @@ function daysBetween(a: Date, b: Date) {
   return Math.round((utcA - utcB) / dayMs)
 }
 
+type Installment = {
+  number: 1 | 2
+  dueDay: number
+  dueDate: Date
+  amount: number
+}
+
+function isBiweekly(client: FinanceClient) {
+  return client.billing_cycle === 'biweekly' && Boolean(client.second_due_day)
+}
+
+// Mensal: uma cobrança no mês. Quinzenal: duas, cada uma com o valor cadastrado.
+function installmentsFor(client: FinanceClient): Installment[] {
+  const amount = Number(client.monthly_amount)
+  const days = isBiweekly(client)
+    ? [client.due_day, client.second_due_day as number]
+    : [client.due_day]
+  return days.map((dueDay, index) => ({
+    number: (index + 1) as 1 | 2,
+    dueDay,
+    dueDate: dueDateForCurrentMonth(dueDay),
+    amount,
+  }))
+}
+
+function monthlyValue(client: FinanceClient) {
+  return Number(client.monthly_amount) * (isBiweekly(client) ? 2 : 1)
+}
+
+function pad(day: number) {
+  return String(day).padStart(2, '0')
+}
+
+function dueDaysLabel(client: FinanceClient) {
+  return isBiweekly(client)
+    ? `dias ${pad(client.due_day)} e ${pad(client.second_due_day as number)}`
+    : `dia ${pad(client.due_day)}`
+}
+
+function amountLabel(client: FinanceClient) {
+  return isBiweekly(client)
+    ? `${money(client.monthly_amount)} por quinzena`
+    : money(client.monthly_amount)
+}
+
 export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('overview')
   const [clientModal, setClientModal] = useState<FinanceClient | 'new' | null>(null)
   const [paymentClient, setPaymentClient] = useState<FinanceClient | null>(null)
+  const [modalCycle, setModalCycle] = useState<'monthly' | 'biweekly'>('monthly')
+  const [modalDueDay, setModalDueDay] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -92,36 +142,53 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
   const cashThisMonth = payments.filter((payment) => payment.paid_at.slice(0, 7) === competence)
 
   const stats = useMemo(() => {
-    const recurring = activeClients.reduce((sum, client) => sum + Number(client.monthly_amount), 0)
+    const recurring = activeClients.reduce((sum, client) => sum + monthlyValue(client), 0)
     const received = cashThisMonth.reduce((sum, payment) => sum + Number(payment.amount), 0)
 
     let receivable = 0
     let overdue = 0
 
     for (const client of activeClients) {
-      const paid = monthPayments.some((payment) => payment.finance_client_id === client.id)
-      if (paid) continue
+      for (const installment of installmentsFor(client)) {
+        const paid = monthPayments.some(
+          (payment) =>
+            payment.finance_client_id === client.id &&
+            (payment.installment ?? 1) === installment.number
+        )
+        if (paid) continue
 
-      const amount = Number(client.monthly_amount)
-      receivable += amount
-
-      if (dueDateForCurrentMonth(client.due_day) < today) {
-        overdue += amount
+        receivable += installment.amount
+        if (installment.dueDate < today) {
+          overdue += installment.amount
+        }
       }
     }
 
     return { recurring, received, receivable, overdue }
   }, [activeClients, cashThisMonth, monthPayments, today])
 
-  function paymentForCurrentMonth(clientId: string) {
-    return monthPayments.find((payment) => payment.finance_client_id === clientId)
+  function paymentFor(clientId: string, installment: number) {
+    return monthPayments.find(
+      (payment) =>
+        payment.finance_client_id === clientId && (payment.installment ?? 1) === installment
+    )
+  }
+
+  function pendingInstallments(client: FinanceClient) {
+    return installmentsFor(client)
+      .filter((installment) => !paymentFor(client.id, installment.number))
+      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
+  }
+
+  function isFullyPaid(client: FinanceClient) {
+    return pendingInstallments(client).length === 0
   }
 
   function lastPayment(clientId: string) {
     return payments.find((payment) => payment.finance_client_id === clientId)
   }
 
-  function billingStatus(client: FinanceClient) {
+  function billingStatus(client: FinanceClient): { label: string; className: string; detail?: string } {
     if (client.status === 'paused') {
       return { label: 'Pausado', className: 'border-ink-700 bg-ink-800/70 text-ink-300' }
     }
@@ -130,37 +197,55 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
       return { label: 'Cancelado', className: 'border-ink-800 bg-ink-900 text-ink-500' }
     }
 
-    const paid = paymentForCurrentMonth(client.id)
-    if (paid) {
-      return { label: 'Pago', className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' }
+    const pending = pendingInstallments(client)
+    if (pending.length === 0) {
+      return {
+        label: 'Pago',
+        className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+        detail: isBiweekly(client) ? 'As duas quinzenas' : undefined,
+      }
     }
 
-    const dueDate = dueDateForCurrentMonth(client.due_day)
-    const difference = daysBetween(dueDate, today)
+    const next = pending[0]
+    const difference = daysBetween(next.dueDate, today)
+    const detail = isBiweekly(client)
+      ? `${next.number}ª quinzena${pending.length === 1 ? ' · 1 de 2 paga' : ''}`
+      : undefined
 
     if (difference < 0) {
       const lateDays = Math.abs(difference)
       return {
         label: `Atrasado ${lateDays} ${lateDays === 1 ? 'dia' : 'dias'}`,
         className: 'border-red-500/20 bg-red-500/10 text-red-300',
+        detail,
       }
     }
 
     if (difference === 0) {
-      return { label: 'Vence hoje', className: 'border-amber-500/20 bg-amber-500/10 text-amber-300' }
+      return { label: 'Vence hoje', className: 'border-amber-500/20 bg-amber-500/10 text-amber-300', detail }
     }
 
     if (difference <= 3) {
-      return { label: difference === 1 ? 'Vence amanhã' : `Vence em ${difference} dias`, className: 'border-amber-500/20 bg-amber-500/10 text-amber-300' }
+      return { label: difference === 1 ? 'Vence amanhã' : `Vence em ${difference} dias`, className: 'border-amber-500/20 bg-amber-500/10 text-amber-300', detail }
     }
 
-    return { label: 'Em dia', className: 'border-auron-500/20 bg-auron-500/10 text-auron-300' }
+    return { label: 'Em dia', className: 'border-auron-500/20 bg-auron-500/10 text-auron-300', detail }
   }
 
   const attentionClients = activeClients
-    .filter((client) => !paymentForCurrentMonth(client.id))
-    .sort((a, b) => a.due_day - b.due_day)
+    .filter((client) => !isFullyPaid(client))
+    .sort(
+      (a, b) =>
+        pendingInstallments(a)[0].dueDate.getTime() - pendingInstallments(b)[0].dueDate.getTime()
+    )
     .slice(0, 6)
+
+  function openClientModal(client: FinanceClient | 'new') {
+    setError('')
+    setModalCycle(client === 'new' ? 'monthly' : client.billing_cycle ?? 'monthly')
+    setModalDueDay(client === 'new' ? '' : String(client.due_day))
+    setClientModal(client)
+  }
 
   async function saveClient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -179,6 +264,8 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
         name: form.get('name'),
         monthlyAmount: form.get('monthlyAmount'),
         dueDay: form.get('dueDay'),
+        billingCycle: modalCycle,
+        secondDueDay: modalCycle === 'biweekly' ? form.get('secondDueDay') : null,
         status: editing ? form.get('status') : 'active',
         notes: form.get('notes'),
       }),
@@ -213,6 +300,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
         competence: form.get('competence'),
         paidAt: form.get('paidAt'),
         amount: form.get('amount'),
+        installment: form.get('installment') ?? 1,
         paymentMethod: form.get('paymentMethod'),
         notes: form.get('notes'),
       }),
@@ -266,10 +354,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
 
         <button
           type="button"
-          onClick={() => {
-            setError('')
-            setClientModal('new')
-          }}
+          onClick={() => openClientModal('new')}
           className="rounded-lg bg-auron-600 px-4 py-2.5 text-sm font-medium transition hover:bg-auron-500"
         >
           Novo cliente financeiro
@@ -297,7 +382,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              ['Receita recorrente', stats.recurring, 'Mensalidades de clientes ativos'],
+              ['Receita recorrente', stats.recurring, 'Total mensal dos clientes ativos'],
               ['Recebido no mês', stats.received, 'Entradas registradas neste mês'],
               ['A receber', stats.receivable, 'Cobranças do mês ainda pendentes'],
               ['Em atraso', stats.overdue, 'Valor vencido e ainda não pago'],
@@ -334,10 +419,13 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                       <div>
                         <p className="font-medium text-ink-200">{client.name}</p>
                         <p className="mt-1 text-xs text-ink-600">
-                          {money(client.monthly_amount)} · vence dia {String(client.due_day).padStart(2, '0')}
+                          {amountLabel(client)} · vence {dueDaysLabel(client)}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {status.detail && (
+                          <span className="text-[11px] text-ink-500">{status.detail}</span>
+                        )}
                         <span className={`rounded-full border px-2.5 py-1 text-xs ${status.className}`}>
                           {status.label}
                         </span>
@@ -373,13 +461,13 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                 <div className="flex justify-between text-sm">
                   <span className="text-ink-500">Pagos no mês</span>
                   <span className="font-medium text-emerald-300">
-                    {activeClients.filter((client) => paymentForCurrentMonth(client.id)).length}
+                    {activeClients.filter((client) => isFullyPaid(client)).length}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-ink-500">Pendentes</span>
                   <span className="font-medium text-amber-300">
-                    {activeClients.filter((client) => !paymentForCurrentMonth(client.id)).length}
+                    {activeClients.filter((client) => !isFullyPaid(client)).length}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -420,12 +508,22 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                         <p className="font-medium text-ink-200">{client.name}</p>
                         {client.notes && <p className="mt-1 max-w-[240px] truncate text-xs text-ink-600">{client.notes}</p>}
                       </td>
-                      <td className="px-5 py-4 font-medium text-ink-300">{money(client.monthly_amount)}</td>
-                      <td className="px-5 py-4 text-ink-400">Dia {String(client.due_day).padStart(2, '0')}</td>
+                      <td className="px-5 py-4">
+                        <p className="font-medium tabular text-ink-300">{money(monthlyValue(client))}</p>
+                        {isBiweekly(client) && (
+                          <p className="mt-0.5 text-xs text-ink-500">
+                            Quinzenal · 2× {money(client.monthly_amount)}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-5 py-4 capitalize text-ink-400">{dueDaysLabel(client)}</td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs ${status.className}`}>
                           {status.label}
                         </span>
+                        {status.detail && (
+                          <p className="mt-1 text-[11px] text-ink-500">{status.detail}</p>
+                        )}
                       </td>
                       <td className="px-5 py-4 text-ink-500">
                         {last ? new Date(`${last.paid_at}T12:00:00`).toLocaleDateString('pt-BR') : '—'}
@@ -455,10 +553,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              setError('')
-                              setClientModal(client)
-                            }}
+                            onClick={() => openClientModal(client)}
                             className="rounded-lg border border-ink-700 px-3 py-2 text-xs text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
                           >
                             Editar
@@ -520,9 +615,35 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                 className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
               />
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <span className="mb-1.5 block text-xs text-ink-500">Cobrança</span>
+                <div className="grid grid-cols-2 gap-1 rounded-lg border border-ink-700 bg-ink-950 p-1">
+                  {([
+                    ['monthly', 'Mensal'],
+                    ['biweekly', 'Quinzenal'],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setModalCycle(value)}
+                      aria-pressed={modalCycle === value}
+                      className={`rounded-md px-3 py-2 text-sm font-medium transition ${
+                        modalCycle === value
+                          ? 'bg-auron-600 text-white'
+                          : 'text-ink-400 hover:text-ink-200'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`grid gap-4 ${modalCycle === 'biweekly' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
                 <label className="text-xs text-ink-500">
-                  <span className="mb-1.5 block">Valor mensal</span>
+                  <span className="mb-1.5 block">
+                    {modalCycle === 'biweekly' ? 'Valor por quinzena' : 'Valor mensal'}
+                  </span>
                   <input
                     name="monthlyAmount"
                     type="number"
@@ -536,18 +657,49 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                 </label>
 
                 <label className="text-xs text-ink-500">
-                  <span className="mb-1.5 block">Dia do vencimento</span>
+                  <span className="mb-1.5 block">
+                    {modalCycle === 'biweekly' ? '1º vencimento (dia)' : 'Dia do vencimento'}
+                  </span>
                   <input
                     name="dueDay"
                     type="number"
                     min="1"
                     max="31"
                     required
-                    defaultValue={clientModal === 'new' ? '' : clientModal.due_day}
+                    value={modalDueDay}
+                    onChange={(event) => setModalDueDay(event.target.value)}
                     className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none focus:border-auron-500"
                   />
                 </label>
+
+                {modalCycle === 'biweekly' && (
+                  <label className="text-xs text-ink-500">
+                    <span className="mb-1.5 block">2º vencimento (dia)</span>
+                    <input
+                      key={`second-${modalDueDay}`}
+                      name="secondDueDay"
+                      type="number"
+                      min="1"
+                      max="31"
+                      required
+                      defaultValue={
+                        clientModal !== 'new' && clientModal.second_due_day
+                          ? clientModal.second_due_day
+                          : Number(modalDueDay) > 0
+                            ? Math.min(Number(modalDueDay) + 15, 30)
+                            : ''
+                      }
+                      className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none focus:border-auron-500"
+                    />
+                  </label>
+                )}
               </div>
+
+              {modalCycle === 'biweekly' && (
+                <p className="-mt-1 text-xs text-ink-500">
+                  Cada quinzena é cobrada e acompanhada separadamente. A receita recorrente soma as duas.
+                </p>
+              )}
 
               {clientModal !== 'new' && (
                 <label className="text-xs text-ink-500">
@@ -599,6 +751,24 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
             </div>
 
             <form onSubmit={savePayment} className="space-y-4">
+              {isBiweekly(paymentClient) && (
+                <label className="block text-xs text-ink-500">
+                  <span className="mb-1.5 block">Quinzena</span>
+                  <select
+                    name="installment"
+                    defaultValue={pendingInstallments(paymentClient)[0]?.number ?? 1}
+                    className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none"
+                  >
+                    {installmentsFor(paymentClient).map((installment) => (
+                      <option key={installment.number} value={installment.number}>
+                        {installment.number}ª quinzena · vence dia {pad(installment.dueDay)}
+                        {paymentFor(paymentClient.id, installment.number) ? ' (já paga)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="text-xs text-ink-500">
                   <span className="mb-1.5 block">Competência</span>

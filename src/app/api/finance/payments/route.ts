@@ -39,14 +39,15 @@ export async function POST(request: Request) {
   const paymentMethod = String(body.paymentMethod || '').trim() || null
   const notes = String(body.notes || '').trim() || null
   const amount = Number(body.amount)
+  const installment = Number(body.installment || 1)
 
-  if (!financeClientId || !/^\d{4}-\d{2}$/.test(competence) || !/^\d{4}-\d{2}-\d{2}$/.test(paidAt) || !Number.isFinite(amount) || amount < 0) {
+  if (!financeClientId || !/^\d{4}-\d{2}$/.test(competence) || !/^\d{4}-\d{2}-\d{2}$/.test(paidAt) || !Number.isFinite(amount) || amount < 0 || ![1, 2].includes(installment)) {
     return NextResponse.json({ error: 'Dados do pagamento inválidos.' }, { status: 400 })
   }
 
   const { data: financeClient } = await supabase
     .from('finance_clients')
-    .select('id, due_day')
+    .select('id, due_day, billing_cycle, second_due_day')
     .eq('id', financeClientId)
     .eq('company_id', membership.company_id)
     .single()
@@ -56,7 +57,12 @@ export async function POST(request: Request) {
   }
 
   const competenceDate = `${competence}-01`
-  const dueDate = dueDateForCompetence(competence, Number(financeClient.due_day))
+  if (installment === 2 && (financeClient.billing_cycle !== 'biweekly' || !financeClient.second_due_day)) {
+    return NextResponse.json({ error: 'Esse cliente não tem segunda quinzena.' }, { status: 400 })
+  }
+
+  const dueDay = installment === 2 ? Number(financeClient.second_due_day) : Number(financeClient.due_day)
+  const dueDate = dueDateForCompetence(competence, dueDay)
 
   const { error } = await supabase
     .from('finance_payments')
@@ -67,9 +73,10 @@ export async function POST(request: Request) {
       due_date: dueDate,
       paid_at: paidAt,
       amount,
+      installment,
       payment_method: paymentMethod,
       notes,
-    }, { onConflict: 'finance_client_id,competence' })
+    }, { onConflict: 'finance_client_id,competence,installment' })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

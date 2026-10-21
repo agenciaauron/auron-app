@@ -38,12 +38,12 @@ export default async function FinancePage() {
       .single(),
     supabase
       .from('finance_clients')
-      .select('id, name, monthly_amount, due_day, status, notes, created_at, updated_at')
+      .select('id, name, monthly_amount, due_day, billing_cycle, second_due_day, status, notes, created_at, updated_at')
       .eq('company_id', companyId)
       .order('name'),
     supabase
       .from('finance_payments')
-      .select('id, finance_client_id, competence, due_date, paid_at, amount, payment_method, notes, created_at')
+      .select('id, finance_client_id, competence, installment, due_date, paid_at, amount, payment_method, notes, created_at')
       .eq('company_id', companyId)
       .order('paid_at', { ascending: false }),
   ])

@@ -3,6 +3,23 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 
 const validStatuses = new Set(['active', 'paused', 'cancelled'])
+const validCycles = new Set(['monthly', 'biweekly'])
+
+// Quinzenal exige um segundo dia de vencimento; mensal não usa.
+function parseBilling(body: Record<string, unknown>, dueDay: number) {
+  const billingCycle = String(body.billingCycle || 'monthly')
+  if (!validCycles.has(billingCycle)) return null
+
+  if (billingCycle === 'monthly') {
+    return { billing_cycle: billingCycle, second_due_day: null }
+  }
+
+  const secondDueDay = Number(body.secondDueDay)
+  if (!Number.isInteger(secondDueDay) || secondDueDay < 1 || secondDueDay > 31 || secondDueDay === dueDay) {
+    return null
+  }
+  return { billing_cycle: billingCycle, second_due_day: secondDueDay }
+}
 
 async function getContext() {
   const supabase = await createClient()
@@ -40,7 +57,12 @@ export async function POST(request: Request) {
   const notes = String(body.notes || '').trim() || null
 
   if (!name || !Number.isFinite(monthlyAmount) || monthlyAmount < 0 || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
-    return NextResponse.json({ error: 'Preencha nome, valor mensal e dia de vencimento corretamente.' }, { status: 400 })
+    return NextResponse.json({ error: 'Preencha nome, valor e dia de vencimento corretamente.' }, { status: 400 })
+  }
+
+  const billing = parseBilling(body, dueDay)
+  if (!billing) {
+    return NextResponse.json({ error: 'No quinzenal, informe um segundo dia de vencimento diferente do primeiro.' }, { status: 400 })
   }
 
   const { error } = await supabase.from('finance_clients').insert({
@@ -48,6 +70,7 @@ export async function POST(request: Request) {
     name,
     monthly_amount: monthlyAmount,
     due_day: dueDay,
+    ...billing,
     notes,
     status: 'active',
   })
@@ -78,12 +101,18 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Dados inválidos.' }, { status: 400 })
   }
 
+  const billing = parseBilling(body, dueDay)
+  if (!billing) {
+    return NextResponse.json({ error: 'No quinzenal, informe um segundo dia de vencimento diferente do primeiro.' }, { status: 400 })
+  }
+
   const { data, error } = await supabase
     .from('finance_clients')
     .update({
       name,
       monthly_amount: monthlyAmount,
       due_day: dueDay,
+      ...billing,
       status,
       notes,
       updated_at: new Date().toISOString(),
