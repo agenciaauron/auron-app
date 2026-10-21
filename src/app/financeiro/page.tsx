@@ -38,7 +38,7 @@ export default async function FinancePage() {
       .single(),
     supabase
       .from('finance_clients')
-      .select('id, name, monthly_amount, due_day, billing_cycle, second_due_day, status, notes, created_at, updated_at')
+      .select('id, name, monthly_amount, due_day, billing_cycle, second_due_day, billing_start, status, notes, created_at, updated_at')
       .eq('company_id', companyId)
       .order('name'),
     supabase

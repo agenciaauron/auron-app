@@ -5,6 +5,13 @@ import { createClient } from '@/lib/supabase/server'
 const validStatuses = new Set(['active', 'paused', 'cancelled'])
 const validCycles = new Set(['monthly', 'biweekly'])
 
+// Início da cobrança: nada antes dessa data é cobrado. Formato YYYY-MM-DD.
+function parseStart(body: Record<string, unknown>) {
+  const value = String(body.billingStart || '').trim()
+  if (!value) return undefined
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
+}
+
 // Quinzenal exige um segundo dia de vencimento; mensal não usa.
 function parseBilling(body: Record<string, unknown>, dueDay: number) {
   const billingCycle = String(body.billingCycle || 'monthly')
@@ -65,12 +72,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No quinzenal, informe um segundo dia de vencimento diferente do primeiro.' }, { status: 400 })
   }
 
+  const billingStart = parseStart(body)
+  if (billingStart === null) {
+    return NextResponse.json({ error: 'Data de início da cobrança inválida.' }, { status: 400 })
+  }
+
   const { error } = await supabase.from('finance_clients').insert({
     company_id: companyId,
     name,
     monthly_amount: monthlyAmount,
     due_day: dueDay,
     ...billing,
+    ...(billingStart ? { billing_start: billingStart } : {}),
     notes,
     status: 'active',
   })
@@ -106,6 +119,11 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'No quinzenal, informe um segundo dia de vencimento diferente do primeiro.' }, { status: 400 })
   }
 
+  const billingStart = parseStart(body)
+  if (billingStart === null) {
+    return NextResponse.json({ error: 'Data de início da cobrança inválida.' }, { status: 400 })
+  }
+
   const { data, error } = await supabase
     .from('finance_clients')
     .update({
@@ -113,6 +131,7 @@ export async function PATCH(request: Request) {
       monthly_amount: monthlyAmount,
       due_day: dueDay,
       ...billing,
+      ...(billingStart ? { billing_start: billingStart } : {}),
       status,
       notes,
       updated_at: new Date().toISOString(),

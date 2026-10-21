@@ -10,6 +10,7 @@ type FinanceClient = {
   due_day: number
   billing_cycle: 'monthly' | 'biweekly'
   second_due_day: number | null
+  billing_start: string | null
   status: 'active' | 'paused' | 'cancelled'
   notes: string | null
   created_at: string
@@ -89,18 +90,55 @@ function isBiweekly(client: FinanceClient) {
   return client.billing_cycle === 'biweekly' && Boolean(client.second_due_day)
 }
 
+function parseLocalDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+// Nada antes do início da cobrança é cobrado (ex.: cliente que começou dia 19
+// não deve aparecer atrasado por um vencimento dia 03 do mesmo mês).
+function billingStartOf(client: FinanceClient) {
+  return parseLocalDate(client.billing_start ?? client.created_at)
+}
+
 // Mensal: uma cobrança no mês. Quinzenal: duas, cada uma com o valor cadastrado.
-function installmentsFor(client: FinanceClient): Installment[] {
+function installmentsFor(client: FinanceClient, includeBeforeStart = false): Installment[] {
   const amount = Number(client.monthly_amount)
+  const start = billingStartOf(client)
   const days = isBiweekly(client)
     ? [client.due_day, client.second_due_day as number]
     : [client.due_day]
-  return days.map((dueDay, index) => ({
-    number: (index + 1) as 1 | 2,
-    dueDay,
-    dueDate: dueDateForCurrentMonth(dueDay),
-    amount,
-  }))
+  return days
+    .map((dueDay, index) => ({
+      number: (index + 1) as 1 | 2,
+      dueDay,
+      dueDate: dueDateForCurrentMonth(dueDay),
+      amount,
+    }))
+    .filter((installment) => includeBeforeStart || installment.dueDate >= start)
+}
+
+// Próximo vencimento depois de hoje (pode cair no mês seguinte).
+function nextDueAfter(client: FinanceClient, today: Date) {
+  const days = isBiweekly(client)
+    ? [client.due_day, client.second_due_day as number]
+    : [client.due_day]
+  const candidates: Date[] = []
+  for (const offset of [0, 1]) {
+    for (const day of days) {
+      const year = today.getFullYear()
+      const month = today.getMonth() + offset
+      const lastDay = new Date(year, month + 1, 0).getDate()
+      candidates.push(new Date(year, month, Math.min(day, lastDay)))
+    }
+  }
+  return candidates
+    .filter((date) => date > today)
+    .sort((a, b) => a.getTime() - b.getTime())[0]
+}
+
+function shortDate(date: Date) {
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
 function monthlyValue(client: FinanceClient) {
@@ -112,9 +150,13 @@ function pad(day: number) {
 }
 
 function dueDaysLabel(client: FinanceClient) {
-  return isBiweekly(client)
-    ? `dias ${pad(client.due_day)} e ${pad(client.second_due_day as number)}`
-    : `dia ${pad(client.due_day)}`
+  if (!isBiweekly(client)) return `dia ${pad(client.due_day)}`
+  const [first, second] = [client.due_day, client.second_due_day as number].sort((a, b) => a - b)
+  return `dias ${pad(first)} e ${pad(second)}`
+}
+
+function capitalize(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 function amountLabel(client: FinanceClient) {
@@ -130,6 +172,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
   const [paymentClient, setPaymentClient] = useState<FinanceClient | null>(null)
   const [modalCycle, setModalCycle] = useState<'monthly' | 'biweekly'>('monthly')
   const [modalDueDay, setModalDueDay] = useState('')
+  const [modalStart, setModalStart] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -197,19 +240,32 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
       return { label: 'Cancelado', className: 'border-ink-800 bg-ink-900 text-ink-500' }
     }
 
+    // Começou depois dos vencimentos deste mês: ainda não há nada a cobrar.
+    if (installmentsFor(client).length === 0) {
+      const first = nextDueAfter(client, today)
+      return {
+        label: first ? `1ª cobrança ${shortDate(first)}` : 'Sem cobrança no mês',
+        className: 'border-ink-700 bg-ink-800/70 text-ink-300',
+      }
+    }
+
     const pending = pendingInstallments(client)
     if (pending.length === 0) {
+      const upcoming = isBiweekly(client) ? nextDueAfter(client, today) : null
       return {
         label: 'Pago',
         className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
-        detail: isBiweekly(client) ? 'As duas quinzenas' : undefined,
+        detail: upcoming ? `Próxima quinzena: ${shortDate(upcoming)}` : undefined,
       }
     }
 
     const next = pending[0]
     const difference = daysBetween(next.dueDate, today)
+    const installmentsThisMonth = installmentsFor(client).length
     const detail = isBiweekly(client)
-      ? `${next.number}ª quinzena${pending.length === 1 ? ' · 1 de 2 paga' : ''}`
+      ? `${next.number}ª quinzena${
+          installmentsThisMonth === 2 && pending.length === 1 ? ' · 1 de 2 paga' : ''
+        }`
       : undefined
 
     if (difference < 0) {
@@ -244,6 +300,11 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
     setError('')
     setModalCycle(client === 'new' ? 'monthly' : client.billing_cycle ?? 'monthly')
     setModalDueDay(client === 'new' ? '' : String(client.due_day))
+    setModalStart(
+      client === 'new'
+        ? isoToday()
+        : (client.billing_start ?? client.created_at).slice(0, 10)
+    )
     setClientModal(client)
   }
 
@@ -265,6 +326,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
         monthlyAmount: form.get('monthlyAmount'),
         dueDay: form.get('dueDay'),
         billingCycle: modalCycle,
+        billingStart: modalStart,
         secondDueDay: modalCycle === 'biweekly' ? form.get('secondDueDay') : null,
         status: editing ? form.get('status') : 'active',
         notes: form.get('notes'),
@@ -461,7 +523,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                 <div className="flex justify-between text-sm">
                   <span className="text-ink-500">Pagos no mês</span>
                   <span className="font-medium text-emerald-300">
-                    {activeClients.filter((client) => isFullyPaid(client)).length}
+                    {activeClients.filter((client) => installmentsFor(client).length > 0 && isFullyPaid(client)).length}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -516,7 +578,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                           </p>
                         )}
                       </td>
-                      <td className="px-5 py-4 capitalize text-ink-400">{dueDaysLabel(client)}</td>
+                      <td className="px-5 py-4 text-ink-400">{capitalize(dueDaysLabel(client))}</td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs ${status.className}`}>
                           {status.label}
@@ -695,6 +757,20 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                 )}
               </div>
 
+              <label className="block text-xs text-ink-500">
+                <span className="mb-1.5 block">Início da cobrança</span>
+                <input
+                  type="date"
+                  required
+                  value={modalStart}
+                  onChange={(event) => setModalStart(event.target.value)}
+                  className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none focus:border-auron-500"
+                />
+                <span className="mt-1.5 block text-ink-600">
+                  Vencimentos antes dessa data não são cobrados.
+                </span>
+              </label>
+
               {modalCycle === 'biweekly' && (
                 <p className="-mt-1 text-xs text-ink-500">
                   Cada quinzena é cobrada e acompanhada separadamente. A receita recorrente soma as duas.
@@ -759,7 +835,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                     defaultValue={pendingInstallments(paymentClient)[0]?.number ?? 1}
                     className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none"
                   >
-                    {installmentsFor(paymentClient).map((installment) => (
+                    {installmentsFor(paymentClient, true).map((installment) => (
                       <option key={installment.number} value={installment.number}>
                         {installment.number}ª quinzena · vence dia {pad(installment.dueDay)}
                         {paymentFor(paymentClient.id, installment.number) ? ' (já paga)' : ''}
