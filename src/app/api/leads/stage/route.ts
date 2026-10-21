@@ -41,7 +41,7 @@ export async function PATCH(request: Request) {
 
   const { data: stage } = await supabase
     .from('pipeline_stages')
-    .select('id, name, is_won')
+    .select('id, name, is_won, is_lost')
     .eq('id', stageId)
     .eq('company_id', membership.company_id)
     .single()
@@ -58,6 +58,9 @@ export async function PATCH(request: Request) {
     .update({
       stage_id: stageId,
       updated_at: new Date().toISOString(),
+      ...(stage.is_lost
+        ? { lost_at: new Date().toISOString() }
+        : { lost_reason: null, lost_at: null }),
     })
     .eq('id', leadId)
     .eq('company_id', membership.company_id)

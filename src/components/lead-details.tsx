@@ -2,11 +2,13 @@
 
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { LOST_REASONS } from '@/lib/lead-cleanup'
 
 type Stage = {
   id: string
   name: string
   is_won?: boolean
+  is_lost?: boolean
 }
 
 type Lead = {
@@ -19,6 +21,9 @@ type Lead = {
   notes: string | null
   stage_id: string | null
   sale_value: number | string | null
+  last_message?: string | null
+  last_message_at?: string | null
+  lost_reason?: string | null
   integration_source: string | null
   ctwa_clid: string | null
   meta_qualified_sent_at: string | null
@@ -56,8 +61,36 @@ export function LeadDetails({ lead, stages, history }: Props) {
   const [error, setError] = useState('')
   const [selectedStageId, setSelectedStageId] = useState(lead.stage_id ?? '')
 
+  const [deleting, setDeleting] = useState(false)
+
   const selectedStage = stages.find((stage) => stage.id === selectedStageId)
   const isSaleStage = Boolean(selectedStage?.is_won)
+  const isLostStage = Boolean(selectedStage?.is_lost)
+
+  async function handleDelete() {
+    if (!confirm(`Excluir ${lead.name} permanentemente? Essa ação não pode ser desfeita.`)) {
+      return
+    }
+
+    setDeleting(true)
+    setError('')
+
+    const response = await fetch('/api/leads/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', leadIds: [lead.id] }),
+    })
+    const result = await response.json()
+
+    if (!response.ok) {
+      setError(result.error || 'Não foi possível excluir o lead.')
+      setDeleting(false)
+      return
+    }
+
+    setOpen(false)
+    router.refresh()
+  }
   const metaEligible = lead.integration_source === 'whatsapp' && Boolean(lead.ctwa_clid)
 
   function getStageName(stageId: string | null) {
@@ -107,6 +140,7 @@ export function LeadDetails({ lead, stages, history }: Props) {
         campaign: form.get('campaign'),
         notes: form.get('notes'),
         saleValue: isSaleStage ? form.get('saleValue') : null,
+        lostReason: isLostStage ? form.get('lostReason') : null,
         stageId: selectedStageId,
       }),
     })
@@ -176,6 +210,16 @@ export function LeadDetails({ lead, stages, history }: Props) {
           </button>
         </div>
 
+        {lead.last_message && (
+          <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
+            <p className="text-xs text-zinc-500">
+              Última mensagem do lead
+              {lead.last_message_at && ` · ${formatDate(lead.last_message_at)}`}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-zinc-200">“{lead.last_message}”</p>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
             name="name"
@@ -231,6 +275,26 @@ export function LeadDetails({ lead, stages, history }: Props) {
               ))}
             </select>
           </div>
+
+          {isLostStage && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+              <label className="mb-2 block text-sm font-medium text-red-300">
+                Motivo da perda
+              </label>
+              <select
+                name="lostReason"
+                defaultValue={lead.lost_reason ?? ''}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none focus:border-red-500"
+              >
+                <option value="">Não informado</option>
+                {LOST_REASONS.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {isSaleStage && (
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
@@ -330,6 +394,15 @@ export function LeadDetails({ lead, stages, history }: Props) {
             {loading ? 'Salvando...' : 'Salvar alterações'}
           </button>
         </form>
+
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting || loading}
+          className="mt-3 w-full rounded-lg px-4 py-2.5 text-sm text-red-400/80 transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-60"
+        >
+          {deleting ? 'Excluindo...' : 'Excluir lead'}
+        </button>
 
         <div className="mt-8 border-t border-zinc-800 pt-6">
           <div className="mb-4 flex items-center justify-between">

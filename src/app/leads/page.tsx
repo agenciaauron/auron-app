@@ -46,7 +46,7 @@ export default async function LeadsPage() {
       supabase
         .from('leads')
         .select(
-          'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at, integration_source, ctwa_clid, meta_qualified_sent_at, meta_purchase_sent_at, meta_last_error, meta_last_error_at'
+          'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at, last_message, last_message_at, lost_reason, integration_source, ctwa_clid, meta_qualified_sent_at, meta_purchase_sent_at, meta_last_error, meta_last_error_at'
         )
         .eq('company_id', companyId)
         .order('created_at', { ascending: false }),

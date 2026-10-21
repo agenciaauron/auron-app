@@ -1,9 +1,11 @@
 'use client'
 
-import { DragEvent, startTransition, useEffect, useState } from 'react'
+import { DragEvent, startTransition, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { LeadBulkDialog } from '@/components/lead-bulk-dialog'
 import { LeadDetails } from '@/components/lead-details'
 import { LeadStageSelect } from '@/components/lead-stage-select'
+import { IDLE_DAYS_DEFAULT, idleDays, idleLabel } from '@/lib/lead-cleanup'
 
 type Stage = {
   id: string
@@ -23,6 +25,10 @@ type Lead = {
   notes: string | null
   stage_id: string | null
   sale_value: number | string | null
+  created_at: string
+  last_message: string | null
+  last_message_at: string | null
+  lost_reason: string | null
   integration_source: string | null
   ctwa_clid: string | null
   meta_qualified_sent_at: string | null
@@ -53,6 +59,14 @@ type Props = {
   history: HistoryItem[]
 }
 
+type DialogState = {
+  mode: 'disqualify' | 'delete'
+  leadIds: string[]
+  defaultReason?: string
+  title?: string
+  description?: string
+} | null
+
 function formatCurrency(value: number | string) {
   return Number(value).toLocaleString('pt-BR', {
     style: 'currency',
@@ -66,10 +80,55 @@ export function CrmPipeline({ stages, leads, history }: Props) {
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null)
   const [overStageId, setOverStageId] = useState<string | null>(null)
   const [savingLeadId, setSavingLeadId] = useState<string | null>(null)
+  const [showLost, setShowLost] = useState(false)
+  const [dialog, setDialog] = useState<DialogState>(null)
+  const [now] = useState(() => Date.now())
 
   useEffect(() => {
     setLocalLeads(leads)
   }, [leads])
+
+  const lostStage = stages.find((stage) => stage.is_lost)
+  const entryStage = stages.find((stage) => !stage.is_won && !stage.is_lost)
+  const visibleStages = showLost ? stages : stages.filter((stage) => !stage.is_lost)
+  const lostCount = lostStage
+    ? localLeads.filter((lead) => lead.stage_id === lostStage.id).length
+    : 0
+
+  // Leads da etapa de entrada sem nenhuma mensagem há alguns dias.
+  const idleEntryLeadIds = useMemo(() => {
+    if (!entryStage) return []
+    return localLeads
+      .filter(
+        (lead) =>
+          lead.stage_id === entryStage.id &&
+          idleDays(lead, now) >= IDLE_DAYS_DEFAULT
+      )
+      .map((lead) => lead.id)
+  }, [localLeads, entryStage, now])
+
+  function handleDialogDone(count: number, reason: string) {
+    if (!dialog) return
+    const ids = new Set(dialog.leadIds)
+
+    setLocalLeads((current) =>
+      dialog.mode === 'delete'
+        ? current.filter((lead) => !ids.has(lead.id))
+        : current.map((lead) =>
+            ids.has(lead.id) && lostStage
+              ? { ...lead, stage_id: lostStage.id, lost_reason: reason }
+              : lead
+          )
+    )
+    setDialog(null)
+    startTransition(() => {
+      router.refresh()
+    })
+
+    if (count === 0) {
+      alert('Nenhum lead foi alterado.')
+    }
+  }
 
   function handleDragStart(event: DragEvent<HTMLDivElement>, leadId: string) {
     event.dataTransfer.effectAllowed = 'move'
@@ -192,8 +251,21 @@ export function CrmPipeline({ stages, leads, history }: Props) {
   }
 
   return (
+    <>
+    {lostStage && (
+      <div className="mb-3 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowLost((value) => !value)}
+          className="text-sm text-zinc-500 transition hover:text-zinc-300"
+        >
+          {showLost ? 'Esconder perdidos' : `Mostrar perdidos (${lostCount})`}
+        </button>
+      </div>
+    )}
+
     <div className="pipeline-scrollbar flex gap-3 overflow-x-auto pb-3">
-      {stages.map((stage) => {
+      {visibleStages.map((stage) => {
         const stageLeads = localLeads.filter(
           (lead) => lead.stage_id === stage.id
         )
@@ -240,6 +312,24 @@ export function CrmPipeline({ stages, leads, history }: Props) {
               </span>
             </div>
 
+            {stage.id === entryStage?.id && idleEntryLeadIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setDialog({
+                    mode: 'disqualify',
+                    leadIds: idleEntryLeadIds,
+                    defaultReason: 'Não respondeu',
+                    title: `Limpar ${idleEntryLeadIds.length} leads parados`,
+                    description: `Leads em ${stage.name} sem nenhuma mensagem há ${IDLE_DAYS_DEFAULT} dias ou mais. Eles vão para Perdido com o motivo escolhido.`,
+                  })
+                }
+                className="mb-3 w-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200 transition hover:bg-amber-500/20"
+              >
+                Limpar {idleEntryLeadIds.length} parados há +{IDLE_DAYS_DEFAULT} dias
+              </button>
+            )}
+
             <div className="space-y-3">
               {stageLeads.length === 0 && (
                 <div
@@ -262,6 +352,7 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                 const hasMetaSuccess = Boolean(
                   lead.meta_qualified_sent_at || lead.meta_purchase_sent_at
                 )
+                const days = idleDays(lead, now)
 
                 return (
                   <div
@@ -273,8 +364,10 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                       isDragging ? 'opacity-40' : 'opacity-100 hover:border-zinc-700'
                     } ${isSaving ? 'pointer-events-none opacity-60' : ''}`}
                   >
-                    <div className="mb-3 flex items-center justify-between text-[10px] uppercase tracking-wide text-zinc-600">
-                      <span>Arraste para mover</span>
+                    <div className="mb-3 flex items-center justify-between text-[11px] text-zinc-600">
+                      <span className={days >= IDLE_DAYS_DEFAULT && !stage.is_won && !stage.is_lost ? 'text-amber-400/80' : ''}>
+                        Última atividade {idleLabel(days)}
+                      </span>
                       {isSaving && <span className="text-purple-400">Salvando...</span>}
                     </div>
 
@@ -296,6 +389,18 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                         </span>
                       )}
                     </div>
+
+                    {lead.last_message && (
+                      <p className="mt-3 line-clamp-2 rounded-lg bg-zinc-900 px-3 py-2 text-xs leading-5 text-zinc-400">
+                        “{lead.last_message}”
+                      </p>
+                    )}
+
+                    {stage.is_lost && lead.lost_reason && (
+                      <p className="mt-3 text-xs text-red-300/80">
+                        Motivo: {lead.lost_reason}
+                      </p>
+                    )}
 
                     {lead.ctwa_clid && (
                       <div className="mt-3 flex items-center gap-2 text-[11px]">
@@ -331,11 +436,25 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                       stages={stages}
                     />
 
-                    <LeadDetails
-                      lead={lead}
-                      stages={stages}
-                      history={leadHistory}
-                    />
+                    <div className={stage.is_lost || stage.is_won ? '' : 'grid grid-cols-2 gap-2'}>
+                      <LeadDetails
+                        lead={lead}
+                        stages={stages}
+                        history={leadHistory}
+                      />
+
+                      {!stage.is_lost && !stage.is_won && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDialog({ mode: 'disqualify', leadIds: [lead.id], title: lead.name })
+                          }
+                          className="mt-3 w-full rounded-md border border-zinc-800 px-3 py-2 text-sm text-zinc-500 transition hover:border-amber-500/40 hover:text-amber-300"
+                        >
+                          Desqualificar
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -344,5 +463,14 @@ export function CrmPipeline({ stages, leads, history }: Props) {
         )
       })}
     </div>
+
+    {dialog && (
+      <LeadBulkDialog
+        {...dialog}
+        onClose={() => setDialog(null)}
+        onDone={handleDialogDone}
+      />
+    )}
+    </>
   )
 }
