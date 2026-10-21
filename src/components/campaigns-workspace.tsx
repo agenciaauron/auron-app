@@ -35,6 +35,15 @@ type Insight = {
   clicks: number
 }
 
+type AdObject = {
+  object_id: string
+  level: string
+  name: string | null
+  effective_status: string | null
+  campaign_id: string | null
+  adset_id: string | null
+}
+
 type Stage = {
   id: string
   name: string
@@ -62,13 +71,14 @@ type HistoryItem = {
 type Props = {
   account: Account | null
   insights: Insight[]
+  objects: AdObject[]
   stages: Stage[]
   leads: Lead[]
   history: HistoryItem[]
   ready: boolean
 }
 
-type Period = '7d' | '30d' | 'month' | '90d' | 'custom'
+type Period = 'month' | 'lastMonth' | '7d' | '30d' | '90d' | 'custom'
 type Level = 'campaign' | 'adset' | 'ad'
 type SortKey = 'spend' | 'leads' | 'cpl' | 'qualified' | 'cpq' | 'sales' | 'cac' | 'revenue' | 'roas'
 
@@ -77,6 +87,7 @@ type Row = {
   name: string
   parent: string | null
   matched: boolean
+  active: boolean
   spend: number
   leads: number
   qualified: number
@@ -123,6 +134,13 @@ function getRange(period: Period, customStart: string, customEnd: string) {
 
   if (period === 'month') {
     return { start: localDateKey(new Date(now.getFullYear(), now.getMonth(), 1)), end: today }
+  }
+
+  if (period === 'lastMonth') {
+    return {
+      start: localDateKey(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+      end: localDateKey(new Date(now.getFullYear(), now.getMonth(), 0)),
+    }
   }
 
   const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
@@ -245,9 +263,12 @@ function AccountForm({
   )
 }
 
-export function CampaignsWorkspace({ account, insights, stages, leads, history, ready }: Props) {
+export function CampaignsWorkspace({ account, insights, objects, stages, leads, history, ready }: Props) {
   const router = useRouter()
-  const [period, setPeriod] = useState<Period>('30d')
+  const [period, setPeriod] = useState<Period>('month')
+  const [onlyActive, setOnlyActive] = useState(true)
+  const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set())
+  const [selectedAdsets, setSelectedAdsets] = useState<Set<string>>(new Set())
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
   const [level, setLevel] = useState<Level>('campaign')
@@ -287,6 +308,7 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
     if (autoSynced.current || !account) return
     const stale =
       !account.last_synced_at ||
+      objects.length === 0 ||
       Date.now() - new Date(account.last_synced_at).getTime() > autoSyncAfterMs
     if (!stale) return
     const timer = setTimeout(() => {
@@ -340,18 +362,68 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
     return status
   }, [stages, leads, history])
 
-  // Nome atual de campanha/conjunto/anúncio de cada anúncio (o dado mais recente vence).
+  // Status e nome atuais vindos da Meta, por ID de campanha, conjunto ou anúncio.
+  const objectMap = useMemo(
+    () => new Map(objects.map((object) => [object.object_id, object])),
+    [objects]
+  )
+
+  // Campanha e conjunto de cada anúncio, com o nome atual (cadastro da Meta primeiro, gasto como reserva).
   const adInfo = useMemo(() => {
-    const map = new Map<string, Insight>()
-    for (const insight of insights) map.set(insight.ad_id, insight)
+    const map = new Map<string, {
+      campaignId: string | null
+      campaignName: string | null
+      adsetId: string | null
+      adsetName: string | null
+      adName: string | null
+    }>()
+
+    for (const insight of insights) {
+      map.set(insight.ad_id, {
+        campaignId: insight.campaign_id,
+        campaignName: insight.campaign_name,
+        adsetId: insight.adset_id,
+        adsetName: insight.adset_name,
+        adName: insight.ad_name,
+      })
+    }
+
+    for (const object of objects) {
+      if (object.level !== 'ad') continue
+      const previous = map.get(object.object_id)
+      const campaignId = object.campaign_id ?? previous?.campaignId ?? null
+      const adsetId = object.adset_id ?? previous?.adsetId ?? null
+      map.set(object.object_id, {
+        campaignId,
+        campaignName: (campaignId && objectMap.get(campaignId)?.name) || previous?.campaignName || null,
+        adsetId,
+        adsetName: (adsetId && objectMap.get(adsetId)?.name) || previous?.adsetName || null,
+        adName: object.name ?? previous?.adName ?? null,
+      })
+    }
+
     return map
-  }, [insights])
+  }, [insights, objects, objectMap])
+
+  // Sem status sincronizado ainda, não dá para saber o que está ativo: mostra tudo.
+  const statusKnown = objects.length > 0
+  const filterActive = onlyActive && statusKnown
 
   const rows = useMemo(() => {
     const grouped = new Map<string, Row>()
 
+    // Seleção em cascata: conjuntos só das campanhas marcadas, anúncios só dos conjuntos marcados.
+    function passesSelection(info: ReturnType<typeof adInfo.get>) {
+      if (level === 'campaign') return true
+      if (!info) return selectedCampaigns.size === 0 && selectedAdsets.size === 0
+      if (selectedCampaigns.size > 0 && !selectedCampaigns.has(info.campaignId ?? '')) return false
+      if (level === 'ad' && selectedAdsets.size > 0 && !selectedAdsets.has(info.adsetId ?? '')) return false
+      return true
+    }
+
     function groupFor(adId: string, fallbackName: string | null) {
       const info = adInfo.get(adId)
+      if (!passesSelection(info)) return null
 
       let key: string
       let name: string
@@ -361,21 +433,33 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
         key = level === 'ad' ? `unmatched:${adId}` : 'unmatched'
         name = level === 'ad' ? fallbackName || `Anúncio ${adId}` : 'Sem gasto sincronizado'
       } else if (level === 'campaign') {
-        key = info.campaign_id || 'none'
-        name = info.campaign_name || 'Campanha sem nome'
+        key = info.campaignId || 'none'
+        name = info.campaignName || 'Campanha sem nome'
       } else if (level === 'adset') {
-        key = info.adset_id || 'none'
-        name = info.adset_name || 'Conjunto sem nome'
-        parent = info.campaign_name
+        key = info.adsetId || 'none'
+        name = info.adsetName || 'Conjunto sem nome'
+        parent = info.campaignName
       } else {
         key = adId
-        name = info.ad_name || fallbackName || `Anúncio ${adId}`
-        parent = [info.campaign_name, info.adset_name].filter(Boolean).join(' · ') || null
+        name = info.adName || fallbackName || `Anúncio ${adId}`
+        parent = [info.campaignName, info.adsetName].filter(Boolean).join(' · ') || null
       }
 
       let row = grouped.get(key)
       if (!row) {
-        row = { key, name, parent, matched: Boolean(info), spend: 0, leads: 0, qualified: 0, lost: 0, sales: 0, revenue: 0 }
+        row = {
+          key,
+          name,
+          parent,
+          matched: Boolean(info),
+          active: objectMap.get(key)?.effective_status === 'ACTIVE',
+          spend: 0,
+          leads: 0,
+          qualified: 0,
+          lost: 0,
+          sales: 0,
+          revenue: 0,
+        }
         grouped.set(key, row)
       }
       return row
@@ -383,7 +467,8 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
 
     for (const insight of insights) {
       if (insight.date < range.start || insight.date > range.end) continue
-      groupFor(insight.ad_id, null).spend += Number(insight.spend)
+      const row = groupFor(insight.ad_id, null)
+      if (row) row.spend += Number(insight.spend)
     }
 
     // Leads que entraram no período, com o que aconteceu com eles depois (qualificação, venda).
@@ -393,6 +478,7 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
       if (day < range.start || day > range.end) continue
 
       const row = groupFor(lead.meta_source_id, lead.meta_headline)
+      if (!row) continue
       const status = leadStatus.get(lead.id)
       row.leads += 1
       if (status?.qualified) row.qualified += 1
@@ -403,8 +489,10 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
       }
     }
 
-    return Array.from(grouped.values()).filter((row) => row.spend > 0 || row.leads > 0)
-  }, [insights, leads, leadStatus, adInfo, level, range])
+    return Array.from(grouped.values()).filter(
+      (row) => (row.spend > 0 || row.leads > 0) && (!filterActive || row.active)
+    )
+  }, [insights, leads, leadStatus, adInfo, objectMap, level, range, filterActive, selectedCampaigns, selectedAdsets])
 
   const sortedRows = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -419,8 +507,16 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
     })
   }, [rows, sortKey, sortAsc])
 
+  const levelSelection = level === 'campaign' ? selectedCampaigns : level === 'adset' ? selectedAdsets : null
+
+  // Os cards somam só o que está marcado no nível atual; sem nada marcado, somam a tabela inteira.
   const totals = useMemo(() => {
-    return rows.reduce(
+    const summaryRows =
+      levelSelection && levelSelection.size > 0
+        ? rows.filter((row) => levelSelection.has(row.key))
+        : rows
+
+    return summaryRows.reduce(
       (total, row) => ({
         spend: total.spend + row.spend,
         leads: total.leads + row.leads,
@@ -430,7 +526,7 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
       }),
       { spend: 0, leads: 0, qualified: 0, sales: 0, revenue: 0 }
     )
-  }, [rows])
+  }, [rows, levelSelection])
 
   const highlights = useMemo(() => {
     const eligible = rows.filter((row) => row.matched && row.spend > 0 && row.leads >= minLeadsForHighlight)
@@ -465,6 +561,43 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
       },
     ]
   }, [rows])
+
+  function toggleSelected(key: string) {
+    const setter = level === 'campaign' ? setSelectedCampaigns : setSelectedAdsets
+    setter((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+    // Trocar as campanhas marcadas invalida os conjuntos escolhidos dentro delas.
+    if (level === 'campaign') setSelectedAdsets(new Set())
+  }
+
+  // Clicar no nome abre o próximo nível só com aquele item, como no Gerenciador de Anúncios.
+  function drillInto(key: string) {
+    if (level === 'campaign') {
+      setSelectedCampaigns(new Set([key]))
+      setSelectedAdsets(new Set())
+      setLevel('adset')
+    } else if (level === 'adset') {
+      setSelectedAdsets(new Set([key]))
+      setLevel('ad')
+    }
+  }
+
+  function clearSelection() {
+    setSelectedCampaigns(new Set())
+    setSelectedAdsets(new Set())
+  }
+
+  function selectionLabel(ids: Set<string>, singular: string, plural: string) {
+    if (ids.size === 1) {
+      const [id] = Array.from(ids)
+      return objectMap.get(id)?.name ?? `1 ${singular}`
+    }
+    return `${ids.size} ${plural}`
+  }
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -531,9 +664,10 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
               onChange={(event) => setPeriod(event.target.value as Period)}
               className="min-w-[170px] rounded-lg border border-ink-800 bg-ink-900 px-4 py-2.5 text-sm text-ink-200 outline-none"
             >
+              <option value="month">Este mês</option>
+              <option value="lastMonth">Mês passado</option>
               <option value="7d">Últimos 7 dias</option>
               <option value="30d">Últimos 30 dias</option>
-              <option value="month">Este mês</option>
               <option value="90d">Últimos 90 dias</option>
               <option value="custom">Personalizado</option>
             </select>
@@ -704,21 +838,61 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
                 }`}
               >
                 {levelLabels[item]}
+                {item === 'campaign' && selectedCampaigns.size > 0 && (
+                  <span className="ml-1.5 rounded-full bg-auron-500/25 px-1.5 text-[11px] text-auron-200">
+                    {selectedCampaigns.size}
+                  </span>
+                )}
+                {item === 'adset' && selectedAdsets.size > 0 && (
+                  <span className="ml-1.5 rounded-full bg-auron-500/25 px-1.5 text-[11px] text-auron-200">
+                    {selectedAdsets.size}
+                  </span>
+                )}
               </button>
             ))}
           </div>
-          <p className="text-xs text-ink-600">
-            Leads, qualificados e vendas contam quem entrou no período, mesmo que tenha fechado depois.
-          </p>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-400">
+            <input
+              type="checkbox"
+              checked={onlyActive}
+              onChange={(event) => setOnlyActive(event.target.checked)}
+              className="h-4 w-4 accent-auron-600"
+            />
+            Só ativos
+          </label>
         </div>
 
+        {(selectedCampaigns.size > 0 || selectedAdsets.size > 0) && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-ink-800 px-4 py-3 text-xs">
+            <span className="text-ink-500">Filtrando por</span>
+            {selectedCampaigns.size > 0 && (
+              <span className="max-w-[320px] truncate rounded-full border border-auron-500/30 bg-auron-500/10 px-2.5 py-1 text-auron-200">
+                {selectionLabel(selectedCampaigns, 'campanha', 'campanhas')}
+              </span>
+            )}
+            {selectedAdsets.size > 0 && (
+              <span className="max-w-[320px] truncate rounded-full border border-auron-500/30 bg-auron-500/10 px-2.5 py-1 text-auron-200">
+                {selectionLabel(selectedAdsets, 'conjunto', 'conjuntos')}
+              </span>
+            )}
+            <button type="button" onClick={clearSelection} className="text-ink-500 hover:text-ink-200">
+              Limpar seleção
+            </button>
+          </div>
+        )}
+
         {sortedRows.length === 0 ? (
-          <p className="p-6 text-sm text-ink-500">Nenhum gasto ou lead de anúncio neste período.</p>
+          <p className="p-6 text-sm text-ink-500">
+            {filterActive
+              ? 'Nenhum item ativo com gasto ou lead neste período. Desmarque "Só ativos" para ver os pausados.'
+              : 'Nenhum gasto ou lead de anúncio neste período.'}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1120px] text-left text-sm">
               <thead className="border-b border-ink-800 text-xs uppercase tracking-wide text-ink-600">
                 <tr>
+                  {levelSelection && <th className="w-10 py-4 pl-5" aria-label="Selecionar" />}
                   <th className="px-5 py-4 font-medium">{levelLabels[level].slice(0, -1)}</th>
                   {columns.map((column) => (
                     <th key={column.key} className="px-4 py-4 text-right font-medium">
@@ -743,11 +917,47 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-800/80">
-                {sortedRows.map((row) => (
-                  <tr key={row.key} className={`transition hover:bg-ink-900/80 ${row.matched ? '' : 'text-ink-500'}`}>
+                {sortedRows.map((row) => {
+                  const selectable = Boolean(levelSelection) && row.matched && row.key !== 'none'
+                  const selected = Boolean(levelSelection?.has(row.key))
+
+                  return (
+                  <tr
+                    key={row.key}
+                    className={`transition hover:bg-ink-900/80 ${row.matched ? '' : 'text-ink-500'} ${
+                      selected ? 'bg-auron-500/5' : ''
+                    }`}
+                  >
+                    {levelSelection && (
+                      <td className="py-4 pl-5">
+                        {selectable && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Selecionar ${row.name}`}
+                            checked={selected}
+                            onChange={() => toggleSelected(row.key)}
+                            className="h-4 w-4 accent-auron-600"
+                          />
+                        )}
+                      </td>
+                    )}
                     <td className="max-w-[320px] px-5 py-4">
-                      <p className="truncate font-medium text-ink-200" title={row.name}>{row.name}</p>
+                      {selectable ? (
+                        <button
+                          type="button"
+                          onClick={() => drillInto(row.key)}
+                          title={`Ver ${level === 'campaign' ? 'conjuntos' : 'anúncios'} de ${row.name}`}
+                          className="block max-w-full truncate text-left font-medium text-ink-200 hover:text-auron-300 hover:underline"
+                        >
+                          {row.name}
+                        </button>
+                      ) : (
+                        <p className="truncate font-medium text-ink-200" title={row.name}>{row.name}</p>
+                      )}
                       {row.parent && <p className="mt-1 truncate text-xs text-ink-600">{row.parent}</p>}
+                      {statusKnown && row.matched && !row.active && (
+                        <p className="mt-1 text-xs text-ink-600">Pausado ou encerrado</p>
+                      )}
                       {!row.matched && (
                         <p className="mt-1 text-xs text-ink-600">
                           Anúncio fora da conta conectada ou ainda não sincronizado
@@ -771,7 +981,8 @@ export function CampaignsWorkspace({ account, insights, stages, leads, history, 
                       {roasLabel(ratio(row.revenue, row.spend))}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

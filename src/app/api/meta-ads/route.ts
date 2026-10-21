@@ -51,6 +51,7 @@ export async function PUT(request: Request) {
   if (changed && current) {
     // Trocou de conta: o gasto antigo não vale mais.
     await supabase.from('meta_ad_insights').delete().eq('company_id', companyId)
+    await supabase.from('meta_ad_objects').delete().eq('company_id', companyId)
   }
 
   const { error } = await supabase

@@ -45,7 +45,7 @@ export default async function CampaignsPage() {
 
   const companyId = membership.company_id
 
-  const [companyResult, accountResult, insightsResult, stagesResult, leadsResult, historyResult] =
+  const [companyResult, accountResult, insightsResult, objectsResult, stagesResult, leadsResult, historyResult] =
     await Promise.all([
       supabase
         .from('companies')
@@ -64,6 +64,14 @@ export default async function CampaignsPage() {
           .eq('company_id', companyId)
           .order('date')
           .order('ad_id')
+          .range(from, to)
+      ),
+      fetchAll((from, to) =>
+        supabase
+          .from('meta_ad_objects')
+          .select('object_id, level, name, effective_status, campaign_id, adset_id')
+          .eq('company_id', companyId)
+          .order('object_id')
           .range(from, to)
       ),
       supabase
@@ -98,6 +106,7 @@ export default async function CampaignsPage() {
       <CampaignsWorkspace
         account={accountResult.data ?? null}
         insights={insightsResult.data ?? []}
+        objects={objectsResult.data ?? []}
         stages={stagesResult.data ?? []}
         leads={leadsResult.data ?? []}
         history={historyResult.data ?? []}
