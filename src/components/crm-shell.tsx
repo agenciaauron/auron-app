@@ -7,6 +7,7 @@ import {
   BarChart3,
   FileSignature,
   LayoutDashboard,
+  Megaphone,
   UsersRound,
   Wallet,
   type LucideIcon,
@@ -15,7 +16,7 @@ import {
 type Props = {
   companyName: string
   role: string
-  activeItem: 'overview' | 'leads' | 'contracts' | 'finance' | 'reports'
+  activeItem: 'overview' | 'leads' | 'campaigns' | 'contracts' | 'finance' | 'reports'
   children: ReactNode
 }
 
@@ -30,6 +31,7 @@ type NavItem = {
 const navigation: NavItem[] = [
   { key: 'overview', label: 'Visão geral', href: '/dashboard', icon: LayoutDashboard, enabled: true },
   { key: 'leads', label: 'Leads', href: '/leads', icon: UsersRound, enabled: true },
+  { key: 'campaigns', label: 'Campanhas', href: '/campanhas', icon: Megaphone, enabled: true },
   { key: 'finance', label: 'Financeiro', href: '/financeiro', icon: Wallet, enabled: true },
   { key: 'contracts', label: 'Contratos', href: '#', icon: FileSignature, enabled: false },
   { key: 'reports', label: 'Relatórios', href: '#', icon: BarChart3, enabled: false },
@@ -56,6 +58,7 @@ export function CrmShell({ companyName, role, activeItem, children }: Props) {
   useEffect(() => {
     router.prefetch('/dashboard')
     router.prefetch('/leads')
+    router.prefetch('/campanhas')
     router.prefetch('/financeiro')
   }, [router])
 
