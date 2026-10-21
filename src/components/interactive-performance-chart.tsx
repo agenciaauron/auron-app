@@ -259,7 +259,7 @@ export function InteractivePerformanceChart({
 
         {hoveredData && tooltipPosition && (
           <div
-            className="pointer-events-none absolute z-30 min-w-[170px] rounded-xl border border-ink-700 bg-ink-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
+            className="pointer-events-none absolute z-30 min-w-[230px] rounded-xl border border-ink-700 bg-ink-900/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur"
             style={{
               left: tooltipPosition.x,
               top: tooltipPosition.y,
