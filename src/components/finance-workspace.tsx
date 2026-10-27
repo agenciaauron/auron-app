@@ -170,6 +170,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
   const [clientModal, setClientModal] = useState<FinanceClient | 'new' | null>(null)
   const [paymentClient, setPaymentClient] = useState<FinanceClient | null>(null)
+  const [deletingClient, setDeletingClient] = useState<FinanceClient | null>(null)
   const [modalCycle, setModalCycle] = useState<'monthly' | 'biweekly'>('monthly')
   const [modalDueDay, setModalDueDay] = useState('')
   const [modalStart, setModalStart] = useState('')
@@ -378,6 +379,31 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
 
     setLoading(false)
     setPaymentClient(null)
+    router.refresh()
+  }
+
+  async function deleteClient() {
+    if (!deletingClient) return
+
+    setLoading(true)
+    setError('')
+
+    const response = await fetch('/api/finance/clients', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: deletingClient.id }),
+    })
+
+    const result = await response.json()
+
+    if (!response.ok) {
+      setError(result.error || 'Não foi possível excluir o cliente.')
+      setLoading(false)
+      return
+    }
+
+    setLoading(false)
+    setDeletingClient(null)
     router.refresh()
   }
 
@@ -619,6 +645,16 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                             className="rounded-lg border border-ink-700 px-3 py-2 text-xs text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
                           >
                             Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setError('')
+                              setDeletingClient(client)
+                            }}
+                            className="rounded-lg border border-red-500/20 px-3 py-2 text-xs text-red-300 transition hover:bg-red-500/10"
+                          >
+                            Excluir
                           </button>
                         </div>
                       </td>
@@ -916,6 +952,40 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                 {loading ? 'Registrando...' : 'Confirmar pagamento'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deletingClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-ink-800 bg-ink-900 p-6">
+            <p className="text-sm text-red-400">Excluir cliente</p>
+            <h2 className="mt-1 text-xl font-semibold">{deletingClient.name}</h2>
+            <p className="mt-3 text-sm leading-6 text-ink-500">
+              O cliente e todo o histórico de pagamentos dele serão removidos do financeiro. Essa ação não pode ser desfeita.
+              Se quiser só parar de cobrar, edite e marque como Pausado ou Cancelado.
+            </p>
+
+            {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setDeletingClient(null)}
+                disabled={loading}
+                className="flex-1 rounded-lg border border-ink-700 px-4 py-3 text-sm text-ink-300 transition hover:bg-ink-800 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={deleteClient}
+                disabled={loading}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-3 text-sm font-medium transition hover:bg-red-500 disabled:opacity-60"
+              >
+                {loading ? 'Excluindo...' : 'Excluir definitivamente'}
+              </button>
+            </div>
           </div>
         </div>
       )}

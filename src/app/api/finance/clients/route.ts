@@ -151,3 +151,36 @@ export async function PATCH(request: Request) {
   revalidatePath('/financeiro')
   return NextResponse.json({ success: true })
 }
+
+// Exclui o cliente e, por cascata no banco, todo o histórico de pagamentos dele.
+export async function DELETE(request: Request) {
+  const context = await getContext()
+  if (context.error) return context.error
+  if (!context.companyId) return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 })
+
+  const { supabase, companyId } = context
+  const body = await request.json()
+  const clientId = String(body.clientId || '')
+
+  if (!clientId) {
+    return NextResponse.json({ error: 'Dados inválidos.' }, { status: 400 })
+  }
+
+  const { data, error } = await supabase
+    .from('finance_clients')
+    .delete()
+    .eq('id', clientId)
+    .eq('company_id', companyId)
+    .select('id')
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (!data?.length) {
+    return NextResponse.json({ error: 'Cliente financeiro não encontrado.' }, { status: 404 })
+  }
+
+  revalidatePath('/financeiro')
+  return NextResponse.json({ success: true })
+}
