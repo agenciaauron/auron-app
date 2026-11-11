@@ -65,6 +65,39 @@ export function formatPhone(raw: string | null | undefined) {
   return raw
 }
 
+// Áudio, foto e arquivo chegam do WhatsApp como JSON técnico: mostra só o tipo.
+export function displayMessage(message: string | null | undefined) {
+  if (!message) return message ?? null
+  const text = message.trim()
+  if (text.startsWith('{') && text.includes('mime_type')) {
+    if (text.includes('audio')) return 'Áudio recebido'
+    if (text.includes('image')) return 'Imagem recebida'
+    if (text.includes('video')) return 'Vídeo recebido'
+    return 'Arquivo recebido'
+  }
+  return message
+}
+
+function messageKey(message: string) {
+  return message.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+// Mensagens que se repetem em vários leads são o texto pré-preenchido do anúncio:
+// não dizem nada sobre o lead, então as telas escondem.
+export function templateMessages(leads: { last_message?: string | null }[], minRepeats = 3) {
+  const counts = new Map<string, number>()
+  leads.forEach((lead) => {
+    if (!lead.last_message) return
+    const key = messageKey(lead.last_message)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  })
+  return new Set(Array.from(counts).filter(([, count]) => count >= minRepeats).map(([key]) => key))
+}
+
+export function isTemplateMessage(message: string | null | undefined, templates: Set<string>) {
+  return !message || templates.has(messageKey(message))
+}
+
 export function whatsappUrl(raw: string | null | undefined) {
   const digits = (raw ?? '').replace(/\D/g, '')
   if (digits.length < 10) return null
