@@ -131,9 +131,8 @@ export async function PATCH(request: Request) {
     })
   }
 
-  revalidatePath('/leads')
+  revalidatePath('/comercial')
   revalidatePath('/dashboard')
-  revalidatePath('/sdr')
 
   const meta = await syncMetaEvent({
     supabase,

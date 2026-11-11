@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import {
   BarChart3,
   FileSignature,
-  Headset,
   LayoutDashboard,
   Megaphone,
   UsersRound,
@@ -20,8 +19,7 @@ type Props = {
   role: string
   activeItem:
     | 'overview'
-    | 'leads'
-    | 'sdr'
+    | 'comercial'
     | 'campaigns'
     | 'contracts'
     | 'finance'
@@ -40,9 +38,8 @@ type NavItem = {
 
 const navigation: NavItem[] = [
   { key: 'overview', label: 'Visão geral', href: '/dashboard', icon: LayoutDashboard, enabled: true, managerOnly: true },
-  { key: 'leads', label: 'Leads', href: '/leads', icon: UsersRound, enabled: true, managerOnly: true },
-  // O SDR só enxerga esta aba.
-  { key: 'sdr', label: 'SDR', href: '/sdr', icon: Headset, enabled: true },
+  // Onde todo mundo trabalha os leads. O SDR só enxerga esta aba (e só os leads dele).
+  { key: 'comercial', label: 'Comercial', href: '/comercial', icon: UsersRound, enabled: true },
   { key: 'campaigns', label: 'Campanhas', href: '/campanhas', icon: Megaphone, enabled: true, managerOnly: true },
   { key: 'finance', label: 'Financeiro', href: '/financeiro', icon: Wallet, enabled: true, managerOnly: true },
   { key: 'contracts', label: 'Contratos', href: '#', icon: FileSignature, enabled: false, managerOnly: true },

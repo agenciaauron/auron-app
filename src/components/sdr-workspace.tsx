@@ -41,12 +41,12 @@ export function SdrWorkspace({ userId, role, firstName, stages, leads, history, 
     <>
       <header className="mb-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-auron-400">SDR</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-auron-400">Comercial</p>
           <h1 className="mt-1.5 font-display text-[28px] font-semibold tracking-tight text-ink-50">
-            {firstName ? `Bom trabalho, ${firstName}` : 'Área do SDR'}
+            {firstName ? `Bom trabalho, ${firstName}` : 'Comercial'}
           </h1>
           <p className="mt-2 text-sm text-ink-500">
-            Atendimento dos leads do tráfego, prospecção, follow-ups, reuniões e comissões.
+            Atendimento, prospecção, follow-ups, reuniões e comissões.
           </p>
         </div>
 

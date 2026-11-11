@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  revalidatePath('/leads')
+  revalidatePath('/comercial')
   revalidatePath('/dashboard')
   return NextResponse.json({ success: true, count: data?.length ?? 0 })
 }

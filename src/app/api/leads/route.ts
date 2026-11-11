@@ -82,8 +82,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  revalidatePath('/leads')
-  revalidatePath('/sdr')
+  revalidatePath('/comercial')
 
   return NextResponse.json({ success: true })
 }

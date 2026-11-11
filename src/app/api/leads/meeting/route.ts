@@ -38,8 +38,7 @@ export async function PATCH(request: Request) {
     note: null,
   })
 
-  revalidatePath('/leads')
-  revalidatePath('/sdr')
+  revalidatePath('/comercial')
 
   return NextResponse.json({ success: true })
 }

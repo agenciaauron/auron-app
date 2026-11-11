@@ -29,9 +29,9 @@ export default async function FinancePage() {
     )
   }
 
-  // SDR não acessa essa página.
+  // SDR só acessa a aba Comercial.
   if (!isManager(membership.role)) {
-    redirect('/sdr')
+    redirect('/comercial')
   }
 
   const companyId = membership.company_id

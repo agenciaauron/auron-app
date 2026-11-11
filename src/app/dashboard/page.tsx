@@ -29,9 +29,9 @@ export default async function DashboardPage() {
     )
   }
 
-  // O SDR entra direto na aba SDR.
+  // O SDR entra direto na aba Comercial.
   if (!isManager(membership.role)) {
-    redirect('/sdr')
+    redirect('/comercial')
   }
 
   const companyId = membership.company_id

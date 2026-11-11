@@ -82,9 +82,8 @@ export async function PATCH(request: Request) {
     })
   }
 
-  revalidatePath('/leads')
+  revalidatePath('/comercial')
   revalidatePath('/dashboard')
-  revalidatePath('/sdr')
 
   const saleValue = data[0].sale_value == null ? null : Number(data[0].sale_value)
   const meta = await syncMetaEvent({
