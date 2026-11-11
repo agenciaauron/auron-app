@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
   const { supabase, userId, companyId, role } = context
   const body = await request.json()
-  const { name, phone, email, source, campaign, nextActionAt, nextActionNote, force } = body
+  const { name, phone, email, source, campaign, nextActionAt, nextActionNote, force, checkDuplicate } = body
   const origin = normalizeOrigin(body.origin)
 
   if (!name?.trim()) {
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
   // Evita abordar a mesma empresa duas vezes.
   const key = phoneKey(phone)
-  if (key && !force) {
+  if (key && checkDuplicate && !force) {
     const { data: existing } = await supabase
       .from('leads')
       .select('id, name, phone, wa_id')
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
   }
 
   revalidatePath('/leads')
-  revalidatePath('/hoje')
+  revalidatePath('/sdr')
 
   return NextResponse.json({ success: true })
 }

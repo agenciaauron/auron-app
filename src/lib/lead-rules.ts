@@ -30,6 +30,7 @@ export function stageChangeFields({
   meetingAt,
   role,
   userId,
+  strict = false,
 }: {
   stage: StageInfo
   lead: LeadInfo
@@ -37,6 +38,8 @@ export function stageChangeFields({
   meetingAt?: string | null
   role: string
   userId: string
+  // Aba SDR: motivo da perda e data da reunião são obrigatórios. Aba Leads: continua como era.
+  strict?: boolean
 }): { fields: Record<string, unknown>; meetingScheduled: boolean; error: string | null } {
   const now = new Date().toISOString()
   const fields: Record<string, unknown> = {}
@@ -45,10 +48,10 @@ export function stageChangeFields({
 
   if (stage.is_lost) {
     const reason = String(lostReason ?? '').trim()
-    if (!reason) {
+    if (strict && !reason) {
       return { fields, meetingScheduled, error: 'Escolha o motivo da perda.' }
     }
-    fields.lost_reason = reason
+    if (lostReason !== undefined) fields.lost_reason = reason || null
     if (stageChanged) fields.lost_at = now
   } else {
     fields.lost_reason = null
@@ -57,14 +60,14 @@ export function stageChangeFields({
 
   if (isMeetingStage(stage)) {
     const nextMeeting = meetingAt ?? lead.meeting_at
-    if (!nextMeeting) {
+    if (strict && !nextMeeting) {
       return { fields, meetingScheduled, error: 'Informe a data e a hora da reunião.' }
     }
     if (meetingAt && !sameInstant(meetingAt, lead.meeting_at)) {
       fields.meeting_at = meetingAt
       fields.meeting_status = 'agendada'
       meetingScheduled = true
-    } else if (!lead.meeting_status) {
+    } else if (nextMeeting && !lead.meeting_status) {
       fields.meeting_status = 'agendada'
     }
   } else if (meetingAt !== undefined && !sameInstant(meetingAt, lead.meeting_at)) {

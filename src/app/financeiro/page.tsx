@@ -31,7 +31,7 @@ export default async function FinancePage() {
 
   // SDR não acessa essa página.
   if (!isManager(membership.role)) {
-    redirect('/hoje')
+    redirect('/sdr')
   }
 
   const companyId = membership.company_id

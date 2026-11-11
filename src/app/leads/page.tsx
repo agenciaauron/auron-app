@@ -2,26 +2,27 @@ import { redirect } from 'next/navigation'
 import { CrmShell } from '@/components/crm-shell'
 import { LeadsWorkspace } from '@/components/leads-workspace'
 import { NewLeadForm } from '@/components/new-lead-form'
-import { getCrmContext, loadTeam } from '@/lib/crm-context'
-import {
-  ACTIVITY_SELECT,
-  HISTORY_SELECT,
-  LEAD_SELECT,
-  STAGE_SELECT,
-  type Activity,
-  type HistoryItem,
-  type Lead,
-  type Stage,
-} from '@/lib/lead-types'
+import { createClient } from '@/lib/supabase/server'
+import { isManager } from '@/lib/crm'
 
 export default async function LeadsPage() {
-  const { supabase, userId, companyId, role } = await getCrmContext()
+  const supabase = await createClient()
+
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const userId = claimsData?.claims?.sub
 
   if (!userId) {
     redirect('/login')
   }
 
-  if (!companyId || !role) {
+  const { data: membership } = await supabase
+    .from('company_members')
+    .select('company_id, role')
+    .eq('user_id', userId)
+    .limit(1)
+    .single()
+
+  if (!membership) {
     return (
       <main className="min-h-screen bg-ink-950 p-10 text-white">
         Nenhuma empresa vinculada.
@@ -29,7 +30,14 @@ export default async function LeadsPage() {
     )
   }
 
-  const [companyResult, stagesResult, leadsResult, historyResult, activitiesResult, team] =
+  // O SDR trabalha só na aba SDR.
+  if (!isManager(membership.role)) {
+    redirect('/sdr')
+  }
+
+  const companyId = membership.company_id
+
+  const [companyResult, stagesResult, leadsResult, historyResult] =
     await Promise.all([
       supabase
         .from('companies')
@@ -38,33 +46,38 @@ export default async function LeadsPage() {
         .single(),
       supabase
         .from('pipeline_stages')
-        .select(STAGE_SELECT)
+        .select('id, name, position, is_won, is_lost')
         .eq('company_id', companyId)
+        // Etapas só da prospecção (A contatar, Contato feito, Respondeu) ficam na aba SDR.
+        .neq('pipeline', 'prospeccao')
         .order('position'),
       supabase
         .from('leads')
-        .select(LEAD_SELECT)
+        .select(
+          'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at, last_message, last_message_at, lost_reason, integration_source, ctwa_clid, meta_qualified_sent_at, meta_purchase_sent_at, meta_last_error, meta_last_error_at'
+        )
         .eq('company_id', companyId)
+        // Lead da prospecção só aparece aqui depois que o SDR marca a reunião.
+        .or('origin.eq.trafego,meeting_at.not.is.null')
         .order('created_at', { ascending: false }),
       supabase
         .from('lead_history')
-        .select(HISTORY_SELECT)
+        .select(
+          'id, lead_id, event_type, from_stage_id, to_stage_id, created_at'
+        )
         .eq('company_id', companyId)
         .order('created_at', { ascending: false }),
-      supabase
-        .from('lead_activities')
-        .select(ACTIVITY_SELECT)
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false }),
-      loadTeam(supabase, companyId),
     ])
 
   const company = companyResult.data
+  const stages = stagesResult.data
+  const leads = leadsResult.data
+  const history = historyResult.data
 
   return (
     <CrmShell
       companyName={company?.name ?? 'Empresa'}
-      role={role}
+      role={membership.role}
       activeItem="leads"
     >
       <header className="mb-7 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -74,7 +87,7 @@ export default async function LeadsPage() {
             Gestão de leads
           </h1>
           <p className="mt-2 text-sm text-ink-500">
-            Trabalhe o funil do tráfego e da prospecção ou consulte toda a base em lista.
+            Trabalhe o funil comercial ou consulte toda a sua base em lista.
           </p>
         </div>
 
@@ -82,12 +95,9 @@ export default async function LeadsPage() {
       </header>
 
       <LeadsWorkspace
-        stages={(stagesResult.data ?? []) as Stage[]}
-        leads={(leadsResult.data ?? []) as Lead[]}
-        history={(historyResult.data ?? []) as HistoryItem[]}
-        activities={(activitiesResult.data ?? []) as Activity[]}
-        team={team}
-        role={role}
+        stages={stages ?? []}
+        leads={leads ?? []}
+        history={history ?? []}
       />
     </CrmShell>
   )

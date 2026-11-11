@@ -7,25 +7,50 @@ import { LeadDeleteDialog } from '@/components/lead-delete-dialog'
 import { LeadDetails } from '@/components/lead-details'
 import { LeadStageSelect } from '@/components/lead-stage-select'
 import { formatPhone, idleDays, idleLabel } from '@/lib/lead-cleanup'
-import {
-  ORIGIN_LABELS,
-  dueLabel,
-  dueState,
-  isManager,
-  normalizeOrigin,
-  stageBelongsTo,
-  type LeadOrigin,
-  type TeamMember,
-} from '@/lib/crm'
-import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
+
+type Stage = {
+  id: string
+  name: string
+  position: number
+  is_won: boolean
+  is_lost: boolean
+}
+
+type Lead = {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  source: string | null
+  campaign: string | null
+  notes: string | null
+  stage_id: string | null
+  sale_value: number | string | null
+  created_at: string
+  last_message: string | null
+  last_message_at: string | null
+  lost_reason: string | null
+  integration_source: string | null
+  ctwa_clid: string | null
+  meta_qualified_sent_at: string | null
+  meta_purchase_sent_at: string | null
+  meta_last_error: string | null
+  meta_last_error_at: string | null
+}
+
+type HistoryItem = {
+  id: string
+  lead_id: string
+  event_type: string
+  from_stage_id: string | null
+  to_stage_id: string | null
+  created_at: string
+}
 
 type Props = {
   stages: Stage[]
   leads: Lead[]
   history: HistoryItem[]
-  activities: Activity[]
-  team: TeamMember[]
-  role: string
 }
 
 type View = 'funnel' | 'list'
@@ -40,28 +65,9 @@ function formatCurrency(value: number | string | null) {
   })
 }
 
-export function LeadsWorkspace({ stages, leads, history, activities, team, role }: Props) {
+export function LeadsWorkspace({ stages, leads, history }: Props) {
   const router = useRouter()
-  const manager = isManager(role)
   const [view, setView] = useState<View>('funnel')
-  const [front, setFront] = useState<LeadOrigin>(role === 'sdr' ? 'prospeccao' : 'trafego')
-  const [originFilter, setOriginFilter] = useState('all')
-
-  const frontStages = useMemo(
-    () => stages.filter((stage) => stageBelongsTo(stage, front)),
-    [stages, front]
-  )
-  const frontLeads = useMemo(
-    () => leads.filter((lead) => normalizeOrigin(lead.origin) === front),
-    [leads, front]
-  )
-  const frontCounts = useMemo(() => {
-    const counts = { trafego: 0, prospeccao: 0 }
-    leads.forEach((lead) => {
-      counts[normalizeOrigin(lead.origin)] += 1
-    })
-    return counts
-  }, [leads])
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('active')
   const [idleFilter, setIdleFilter] = useState('any')
@@ -110,7 +116,6 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
         return false
       }
       if (idleFilter !== 'any' && idleDays(lead, now) < Number(idleFilter)) return false
-      if (originFilter !== 'all' && normalizeOrigin(lead.origin) !== originFilter) return false
       if (sourceFilter !== 'all' && lead.source !== sourceFilter) return false
       if (campaignFilter !== 'all' && lead.campaign !== campaignFilter) return false
 
@@ -145,7 +150,6 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
     search,
     stageFilter,
     idleFilter,
-    originFilter,
     now,
     sourceFilter,
     campaignFilter,
@@ -156,7 +160,6 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
     Boolean(search.trim()) ||
     stageFilter !== 'active' ||
     idleFilter !== 'any' ||
-    originFilter !== 'all' ||
     sourceFilter !== 'all' ||
     campaignFilter !== 'all'
 
@@ -209,7 +212,6 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
     setSearch('')
     setStageFilter('active')
     setIdleFilter('any')
-    setOriginFilter('all')
     setSourceFilter('all')
     setCampaignFilter('all')
   }
@@ -242,39 +244,8 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
           </button>
         </div>
 
-        {view === 'funnel' && (
-          <div className="inline-flex w-fit rounded-lg border border-ink-800 bg-ink-900 p-1">
-            {(['trafego', 'prospeccao'] as LeadOrigin[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setFront(item)}
-                className={`rounded-md px-4 py-2 text-sm transition ${
-                  front === item ? 'bg-ink-700 text-ink-50' : 'text-ink-400 hover:text-ink-200'
-                }`}
-              >
-                {ORIGIN_LABELS[item]}
-                <span className="ml-2 text-xs text-ink-500">{frontCounts[item]}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
         {view === 'list' && (
           <div className="flex flex-wrap items-end gap-2">
-            <label className="text-xs text-ink-500">
-              <span className="mb-1 block">Frente</span>
-              <select
-                value={originFilter}
-                onChange={(event) => setOriginFilter(event.target.value)}
-                className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5 text-sm text-ink-300 outline-none"
-              >
-                <option value="all">Todas</option>
-                <option value="trafego">Tráfego</option>
-                <option value="prospeccao">Prospecção</option>
-              </select>
-            </label>
-
             <label className="text-xs text-ink-500">
               <span className="mb-1 block">Buscar</span>
               <input
@@ -366,15 +337,7 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
       </div>
 
       {view === 'funnel' ? (
-        <CrmPipeline
-          key={front}
-          stages={frontStages}
-          leads={frontLeads}
-          history={history}
-          activities={activities}
-          team={team}
-          role={role}
-        />
+        <CrmPipeline stages={stages} leads={leads} history={history} />
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -395,7 +358,7 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
             )}
           </div>
 
-          {manager && visibleSelected.length > 0 && (
+          {visibleSelected.length > 0 && (
             <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-auron-500/30 bg-ink-900 px-4 py-3 shadow-lg">
               <span className="text-sm text-ink-200">
                 <span className="font-semibold">{visibleSelected.length}</span>{' '}
@@ -425,19 +388,16 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
               <thead className="border-b border-ink-800 text-xs uppercase tracking-wide text-ink-600">
                 <tr>
                   <th className="w-10 py-4 pl-5">
-                    {manager && (
-                      <input
-                        type="checkbox"
-                        aria-label="Selecionar todos os leads filtrados"
-                        checked={allVisibleSelected}
-                        onChange={toggleAllVisible}
-                        className="h-4 w-4 accent-auron-600"
-                      />
-                    )}
+                    <input
+                      type="checkbox"
+                      aria-label="Selecionar todos os leads filtrados"
+                      checked={allVisibleSelected}
+                      onChange={toggleAllVisible}
+                      className="h-4 w-4 accent-auron-600"
+                    />
                   </th>
                   <th className="px-5 py-4 font-medium">Lead</th>
                   <th className="px-5 py-4 font-medium">Origem</th>
-                  <th className="px-5 py-4 font-medium">Próximo contato</th>
                   <th className="px-5 py-4 font-medium">Campanha</th>
                   <th className="px-5 py-4 font-medium">Entrada</th>
                   <th className="px-5 py-4 font-medium">Status</th>
@@ -464,15 +424,13 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
                       }`}
                     >
                       <td className="py-4 pl-5">
-                        {manager && (
-                          <input
-                            type="checkbox"
-                            aria-label={`Selecionar ${lead.name}`}
-                            checked={selected.has(lead.id)}
-                            onChange={() => toggleLead(lead.id)}
-                            className="h-4 w-4 accent-auron-600"
-                          />
-                        )}
+                        <input
+                          type="checkbox"
+                          aria-label={`Selecionar ${lead.name}`}
+                          checked={selected.has(lead.id)}
+                          onChange={() => toggleLead(lead.id)}
+                          className="h-4 w-4 accent-auron-600"
+                        />
                       </td>
                       <td className="max-w-[260px] px-5 py-4">
                         <p className="font-medium text-ink-200">{lead.name}</p>
@@ -488,32 +446,6 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
 
                       <td className="px-5 py-4 text-ink-400">
                         {lead.source || '—'}
-                        <p className="mt-1 text-xs text-ink-600">
-                          {ORIGIN_LABELS[normalizeOrigin(lead.origin)]}
-                        </p>
-                      </td>
-
-                      <td className="max-w-[200px] px-5 py-4 text-xs">
-                        {lead.next_action_at && !currentStage?.is_won && !currentStage?.is_lost ? (
-                          <>
-                            <span
-                              className={
-                                dueState(lead.next_action_at, now) === 'overdue'
-                                  ? 'text-rose-300'
-                                  : dueState(lead.next_action_at, now) === 'today'
-                                    ? 'text-amber-300'
-                                    : 'text-ink-400'
-                              }
-                            >
-                              {dueLabel(lead.next_action_at, now)}
-                            </span>
-                            {lead.next_action_note && (
-                              <p className="mt-1 truncate text-ink-600">{lead.next_action_note}</p>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-ink-600">—</span>
-                        )}
                       </td>
 
                       <td className="max-w-[190px] truncate px-5 py-4 text-ink-500">
@@ -553,13 +485,8 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
                       <td className="w-[210px] px-5 py-4">
                         <LeadStageSelect
                           leadId={lead.id}
-                          leadName={lead.name}
                           currentStageId={lead.stage_id}
-                          stages={stages.filter(
-                            (stage) =>
-                              stageBelongsTo(stage, normalizeOrigin(lead.origin)) ||
-                              stage.id === lead.stage_id
-                          )}
+                          stages={stages}
                         />
                       </td>
 
@@ -568,9 +495,6 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
                           lead={lead}
                           stages={stages}
                           history={leadHistory}
-                          activities={activities.filter((item) => item.lead_id === lead.id)}
-                          team={team}
-                          role={role}
                         />
                       </td>
                     </tr>
@@ -579,7 +503,7 @@ export function LeadsWorkspace({ stages, leads, history, activities, team, role 
 
                 {filteredLeads.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-5 py-14 text-center text-ink-600">
+                    <td colSpan={9} className="px-5 py-14 text-center text-ink-600">
                       Nenhum lead encontrado com esses filtros.
                     </td>
                   </tr>

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { CrmShell } from '@/components/crm-shell'
-import { TodayWorkspace } from '@/components/today-workspace'
+import { SdrWorkspace } from '@/components/sdr-workspace'
 import { getCrmContext, loadTeam } from '@/lib/crm-context'
 import {
   ACTIVITY_SELECT,
@@ -13,7 +13,7 @@ import {
   type Stage,
 } from '@/lib/lead-types'
 
-export default async function TodayPage() {
+export default async function SdrPage() {
   const { supabase, userId, companyId, role } = await getCrmContext()
 
   if (!userId) {
@@ -50,23 +50,15 @@ export default async function TodayPage() {
       loadTeam(supabase, companyId),
     ])
 
-  const firstName = team.find((member) => member.user_id === userId)?.name.split(' ')[0]
+  const myName = team.find((member) => member.user_id === userId)?.name
+  const firstName = myName && myName !== 'Sem nome' ? myName.split(' ')[0] : null
 
   return (
-    <CrmShell companyName={companyResult.data?.name ?? 'Empresa'} role={role} activeItem="today">
-      <header className="mb-7">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-auron-400">Hoje</p>
-        <h1 className="mt-1.5 font-display text-[28px] font-semibold tracking-tight text-ink-50">
-          {firstName && firstName !== 'Sem' ? `Bom trabalho, ${firstName}` : 'O que fazer hoje'}
-        </h1>
-        <p className="mt-2 text-sm text-ink-500">
-          Leads esperando resposta, follow-ups e reuniões do dia, em ordem de prioridade.
-        </p>
-      </header>
-
-      <TodayWorkspace
+    <CrmShell companyName={companyResult.data?.name ?? 'Empresa'} role={role} activeItem="sdr">
+      <SdrWorkspace
         userId={userId}
         role={role}
+        firstName={firstName}
         stages={(stagesResult.data ?? []) as Stage[]}
         leads={(leadsResult.data ?? []) as Lead[]}
         history={(historyResult.data ?? []) as HistoryItem[]}

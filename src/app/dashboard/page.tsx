@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { CrmShell } from '@/components/crm-shell'
 import { OverviewDashboard } from '@/components/overview-dashboard'
 import { createClient } from '@/lib/supabase/server'
+import { isManager } from '@/lib/crm'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -26,6 +27,11 @@ export default async function DashboardPage() {
         Nenhuma empresa vinculada.
       </main>
     )
+  }
+
+  // O SDR entra direto na aba SDR.
+  if (!isManager(membership.role)) {
+    redirect('/sdr')
   }
 
   const companyId = membership.company_id

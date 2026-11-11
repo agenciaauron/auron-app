@@ -10,7 +10,7 @@ export async function PATCH(request: Request) {
   if (contextError) return contextError
 
   const { supabase, userId, companyId, role } = context
-  const { leadId, stageId, lostReason, meetingAt } = await request.json()
+  const { leadId, stageId, lostReason, meetingAt, strict } = await request.json()
 
   if (!leadId || !stageId) {
     return NextResponse.json({ error: 'Lead ou etapa inválida' }, { status: 400 })
@@ -46,6 +46,7 @@ export async function PATCH(request: Request) {
     meetingAt: meetingAt === undefined ? undefined : fromLocalInput(meetingAt) ?? null,
     role,
     userId,
+    strict: Boolean(strict),
   })
 
   if (change.error) {
@@ -83,7 +84,7 @@ export async function PATCH(request: Request) {
 
   revalidatePath('/leads')
   revalidatePath('/dashboard')
-  revalidatePath('/hoje')
+  revalidatePath('/sdr')
 
   const saleValue = data[0].sale_value == null ? null : Number(data[0].sale_value)
   const meta = await syncMetaEvent({

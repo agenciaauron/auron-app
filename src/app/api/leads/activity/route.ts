@@ -58,7 +58,7 @@ export async function POST(request: Request) {
   await supabase.from('leads').update(leadUpdate).eq('id', leadId).eq('company_id', companyId)
 
   revalidatePath('/leads')
-  revalidatePath('/hoje')
+  revalidatePath('/sdr')
 
   return NextResponse.json({ success: true })
 }

@@ -5,9 +5,8 @@ import { ReactNode, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   BarChart3,
-  CalendarCheck,
   FileSignature,
-  HandCoins,
+  Headset,
   LayoutDashboard,
   Megaphone,
   UsersRound,
@@ -20,11 +19,10 @@ type Props = {
   companyName: string
   role: string
   activeItem:
-    | 'today'
     | 'overview'
     | 'leads'
+    | 'sdr'
     | 'campaigns'
-    | 'commissions'
     | 'contracts'
     | 'finance'
     | 'reports'
@@ -41,10 +39,10 @@ type NavItem = {
 }
 
 const navigation: NavItem[] = [
-  { key: 'today', label: 'Hoje', href: '/hoje', icon: CalendarCheck, enabled: true },
-  { key: 'overview', label: 'Visão geral', href: '/dashboard', icon: LayoutDashboard, enabled: true },
-  { key: 'leads', label: 'Leads', href: '/leads', icon: UsersRound, enabled: true },
-  { key: 'commissions', label: 'Comissões', href: '/comissoes', icon: HandCoins, enabled: true },
+  { key: 'overview', label: 'Visão geral', href: '/dashboard', icon: LayoutDashboard, enabled: true, managerOnly: true },
+  { key: 'leads', label: 'Leads', href: '/leads', icon: UsersRound, enabled: true, managerOnly: true },
+  // O SDR só enxerga esta aba.
+  { key: 'sdr', label: 'SDR', href: '/sdr', icon: Headset, enabled: true },
   { key: 'campaigns', label: 'Campanhas', href: '/campanhas', icon: Megaphone, enabled: true, managerOnly: true },
   { key: 'finance', label: 'Financeiro', href: '/financeiro', icon: Wallet, enabled: true, managerOnly: true },
   { key: 'contracts', label: 'Contratos', href: '#', icon: FileSignature, enabled: false, managerOnly: true },

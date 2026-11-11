@@ -3,7 +3,7 @@
 import { ReactNode, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlarmClock, CalendarCheck, CircleCheck, Inbox, MessageCircle, Route, UserX } from 'lucide-react'
-import { LeadDetails } from '@/components/lead-details'
+import { SdrLeadDetails } from '@/components/sdr-lead-details'
 import { formatPhone, whatsappUrl } from '@/lib/lead-cleanup'
 import {
   ORIGIN_LABELS,
@@ -164,7 +164,7 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <LeadDetails
+            <SdrLeadDetails
               lead={lead}
               stages={stages}
               history={history.filter((item) => item.lead_id === lead.id)}

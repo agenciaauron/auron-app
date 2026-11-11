@@ -46,7 +46,7 @@ export default async function CampaignsPage() {
 
   // SDR não acessa essa página.
   if (!isManager(membership.role)) {
-    redirect('/hoje')
+    redirect('/sdr')
   }
 
   const companyId = membership.company_id

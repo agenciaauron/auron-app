@@ -28,6 +28,7 @@ export async function PATCH(request: Request) {
     nextActionAt,
     nextActionNote,
     meetingAt,
+    strict,
   } = body
 
   if (!leadId || !name?.trim()) {
@@ -73,6 +74,7 @@ export async function PATCH(request: Request) {
     meetingAt: meetingAt === undefined ? undefined : fromLocalInput(meetingAt),
     role,
     userId,
+    strict: Boolean(strict),
   })
 
   if (change.error) {
@@ -131,8 +133,7 @@ export async function PATCH(request: Request) {
 
   revalidatePath('/leads')
   revalidatePath('/dashboard')
-  revalidatePath('/hoje')
-  revalidatePath('/comissoes')
+  revalidatePath('/sdr')
 
   const meta = await syncMetaEvent({
     supabase,
