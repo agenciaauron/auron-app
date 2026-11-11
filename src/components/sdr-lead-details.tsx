@@ -2,8 +2,8 @@
 
 import { FormEvent, ReactNode, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageCircle, X } from 'lucide-react'
-import { LOST_REASONS, formatPhone, whatsappUrl } from '@/lib/lead-cleanup'
+import { ChevronDown, MessageCircle, X } from 'lucide-react'
+import { LOST_REASONS, displayMessage, formatPhone, whatsappUrl } from '@/lib/lead-cleanup'
 import {
   ACTIVITY_LABELS,
   MEETING_STATUS_LABELS,
@@ -36,6 +36,9 @@ type Props = {
   activities?: Activity[]
   team?: TeamMember[]
   role?: string
+  // Modo controlado: a tela abre a ficha (clique no card/linha) e fecha por onClose.
+  open?: boolean
+  onClose?: () => void
   triggerLabel?: ReactNode
   triggerClassName?: string
 }
@@ -48,8 +51,26 @@ type TimelineItem = {
   created_at: string
 }
 
-const fieldClass =
-  'w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500'
+const inputClass =
+  'w-full rounded-lg border border-ink-800 bg-ink-900/60 px-3.5 py-2.5 text-sm text-ink-100 outline-none transition placeholder:text-ink-600 focus:border-auron-500 [color-scheme:dark]'
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-medium text-ink-400">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="border-t border-ink-800/80 pt-5 first:border-t-0 first:pt-0">
+      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-500">{title}</h3>
+      <div className="space-y-3">{children}</div>
+    </section>
+  )
+}
 
 export function SdrLeadDetails({
   lead,
@@ -58,18 +79,22 @@ export function SdrLeadDetails({
   activities = [],
   team = [],
   role = 'member',
+  open: controlledOpen,
+  onClose,
   triggerLabel,
   triggerClassName,
 }: Props) {
   const router = useRouter()
   const manager = isManager(role)
+  const controlled = controlledOpen !== undefined
 
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedStageId, setSelectedStageId] = useState(lead.stage_id ?? '')
   const [origin, setOrigin] = useState(normalizeOrigin(lead.origin))
   const [deleting, setDeleting] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
 
   const [activityType, setActivityType] = useState<ActivityType | null>(null)
   const [activityNote, setActivityNote] = useState('')
@@ -78,7 +103,9 @@ export function SdrLeadDetails({
   const [activitySaving, setActivitySaving] = useState(false)
   const [activityError, setActivityError] = useState('')
 
+  const open = controlled ? controlledOpen : internalOpen
   const selectedStage = stages.find((stage) => stage.id === selectedStageId)
+  const currentStage = stages.find((stage) => stage.id === lead.stage_id)
   const isSaleStage = Boolean(selectedStage?.is_won)
   const isLostStage = Boolean(selectedStage?.is_lost)
   const isMeeting = isMeetingStage(selectedStage)
@@ -91,6 +118,11 @@ export function SdrLeadDetails({
   const isLandingPage = (lead.source ?? '').toLowerCase().includes('landing')
   const metaEligible =
     lead.integration_source === 'whatsapp' && (Boolean(lead.ctwa_clid) || isLandingPage)
+
+  function close() {
+    if (controlled) onClose?.()
+    else setInternalOpen(false)
+  }
 
   function memberName(userId: string | null | undefined) {
     if (!userId) return null
@@ -109,7 +141,7 @@ export function SdrLeadDetails({
         item.event_type === 'created'
           ? 'Lead adicionado ao CRM'
           : item.event_type === 'stage_changed'
-            ? `Movido de ${getStageName(item.from_stage_id)} para ${getStageName(item.to_stage_id)}`
+            ? `${getStageName(item.from_stage_id)} → ${getStageName(item.to_stage_id)}`
             : 'Atualização registrada',
       who: memberName(item.user_id),
       created_at: item.created_at,
@@ -144,7 +176,7 @@ export function SdrLeadDetails({
       return
     }
 
-    setOpen(false)
+    close()
     router.refresh()
   }
 
@@ -158,9 +190,7 @@ export function SdrLeadDetails({
 
     const response = await fetch('/api/leads/update', {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         leadId: lead.id,
         name: form.get('name'),
@@ -206,7 +236,7 @@ export function SdrLeadDetails({
     }
 
     setLoading(false)
-    setOpen(false)
+    close()
     router.refresh()
   }
 
@@ -254,17 +284,18 @@ export function SdrLeadDetails({
     setOrigin(normalizeOrigin(lead.origin))
     setActivityType(null)
     setError('')
-    setOpen(true)
+    setInternalOpen(true)
   }
 
   if (!open) {
+    if (controlled) return null
     return (
       <button
         type="button"
         onClick={openDetails}
         className={
           triggerClassName ??
-          'mt-3 w-full rounded-md border border-ink-700 px-3 py-2 text-sm text-ink-300 transition hover:bg-ink-900'
+          'rounded-md border border-ink-700 px-3 py-2 text-sm text-ink-300 transition hover:bg-ink-900'
         }
       >
         {triggerLabel ?? 'Ver ficha'}
@@ -272,113 +303,128 @@ export function SdrLeadDetails({
     )
   }
 
+  const waUrl = whatsappUrl(lead.phone)
+  const metaLine = metaEligible
+    ? [
+        `Qualificado: ${lead.meta_qualified_sent_at ? `enviado ${formatDateTime(lead.meta_qualified_sent_at)}` : 'não enviado'}`,
+        `Venda: ${lead.meta_purchase_sent_at ? `enviada ${formatDateTime(lead.meta_purchase_sent_at)}` : 'não enviada'}`,
+      ].join(' · ')
+    : 'Lead sem vínculo com anúncio ou site: nenhum evento é enviado.'
+
   return (
     <div
       className="fixed inset-0 z-50 flex justify-end bg-ink-1000/70 backdrop-blur-[2px]"
       onClick={(event) => {
-        if (event.target === event.currentTarget && !loading) setOpen(false)
+        if (event.target === event.currentTarget && !loading) close()
       }}
     >
-      <div className="pipeline-scrollbar h-full w-full max-w-lg overflow-y-auto border-l border-ink-800 bg-ink-950 p-6 text-left shadow-2xl shadow-black/50">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-auron-400">
-              Ficha do lead · {ORIGIN_LABELS[normalizeOrigin(lead.origin)]}
-            </p>
-            <h2 className="mt-1.5 truncate font-display text-2xl font-semibold text-ink-50">
-              {lead.name}
-            </h2>
-            {lead.phone && (
-              <p className="mt-1 font-mono text-sm text-ink-400">{formatPhone(lead.phone)}</p>
-            )}
-            {sdrName && <p className="mt-1 text-xs text-ink-500">SDR: {sdrName}</p>}
-          </div>
+      <div className="flex h-full w-full max-w-[520px] flex-col border-l border-ink-800 bg-ink-950 text-left shadow-2xl shadow-black/50">
+        {/* Cabeçalho */}
+        <div className="border-b border-ink-800/80 px-6 pb-5 pt-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="truncate font-display text-xl font-semibold text-ink-50">{lead.name}</h2>
+              {lead.phone && <p className="mt-1 font-mono text-sm text-ink-400">{formatPhone(lead.phone)}</p>}
+            </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {whatsappUrl(lead.phone) && (
-              <a
-                href={whatsappUrl(lead.phone) ?? undefined}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-2 rounded-lg bg-whatsapp/15 px-3 py-2 text-sm font-semibold text-whatsapp transition hover:bg-whatsapp/25"
+            <div className="flex shrink-0 items-center gap-1.5">
+              {waUrl && (
+                <a
+                  href={waUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 rounded-lg bg-whatsapp/15 px-3 py-2 text-sm font-semibold text-whatsapp transition hover:bg-whatsapp/25"
+                >
+                  <MessageCircle className="h-4 w-4" strokeWidth={2} aria-hidden />
+                  WhatsApp
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={close}
+                aria-label="Fechar ficha"
+                className="rounded-lg p-2 text-ink-400 transition hover:bg-ink-800 hover:text-ink-100"
               >
-                <MessageCircle className="h-4 w-4" strokeWidth={2} aria-hidden />
-                WhatsApp
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Fechar ficha"
-              className="rounded-lg p-2 text-ink-400 transition hover:bg-ink-800 hover:text-ink-100"
+                <X className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span
+              className={`rounded-full px-2.5 py-1 font-medium ${
+                currentStage?.is_won
+                  ? 'bg-emerald-500/10 text-emerald-300'
+                  : currentStage?.is_lost
+                    ? 'bg-rose-500/10 text-rose-300'
+                    : 'bg-auron-500/12 text-auron-200'
+              }`}
             >
-              <X className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-            </button>
+              {currentStage?.name ?? 'Sem etapa'}
+            </span>
+            <span className="rounded-full bg-ink-800 px-2.5 py-1 text-ink-300">
+              {ORIGIN_LABELS[normalizeOrigin(lead.origin)]}
+            </span>
+            {sdrName && <span className="text-ink-500">SDR: {sdrName}</span>}
           </div>
-        </div>
 
-        {lead.last_message && (
-          <div className="mb-5 rounded-xl border border-ink-800 bg-ink-950/70 p-4">
-            <p className="text-xs text-ink-500">
-              Última mensagem do lead
-              {lead.last_message_at && ` · ${formatDateTime(lead.last_message_at)}`}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-ink-200">“{lead.last_message}”</p>
-          </div>
-        )}
+          {lead.last_message && (
+            <div className="mt-4 rounded-lg bg-ink-900/70 px-3.5 py-3">
+              <p className="text-[11px] text-ink-500">
+                Última mensagem{lead.last_message_at && ` · ${formatDateTime(lead.last_message_at)}`}
+              </p>
+              <p className="mt-1 text-sm leading-6 text-ink-200">“{displayMessage(lead.last_message)}”</p>
+            </div>
+          )}
 
-        {/* Registro rápido do que foi feito */}
-        <div className="mb-5 rounded-xl border border-ink-800 bg-ink-900/40 p-4">
-          <p className="text-sm font-medium text-ink-200">Registrar atividade</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          {/* Registro rápido do que foi feito */}
+          <div className="mt-4 flex flex-wrap gap-1.5">
             {QUICK_ACTIVITIES.map((type) => (
               <button
                 key={type}
                 type="button"
-                onClick={() => startActivity(type)}
-                className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+                onClick={() => (activityType === type ? setActivityType(null) : startActivity(type))}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                   activityType === type
                     ? 'border-auron-500 bg-auron-500/15 text-ink-50'
-                    : 'border-ink-700 text-ink-300 hover:bg-ink-800'
+                    : 'border-ink-700 text-ink-300 hover:border-ink-600 hover:bg-ink-900'
                 }`}
               >
-                {type === 'nota' ? 'Anotação' : ACTIVITY_LABELS[type]}
+                {type === 'nota' ? '+ Anotação' : `+ ${ACTIVITY_LABELS[type]}`}
               </button>
             ))}
           </div>
 
           {activityType && (
-            <form onSubmit={saveActivity} className="mt-4 space-y-3">
+            <form onSubmit={saveActivity} className="mt-3 space-y-3 rounded-xl border border-ink-800 bg-ink-900/40 p-3.5">
               <textarea
                 rows={2}
                 value={activityNote}
                 onChange={(event) => setActivityNote(event.target.value)}
                 required={activityType === 'nota'}
                 placeholder={activityType === 'nota' ? 'Escreva a anotação' : 'Observação (opcional)'}
-                className={`${fieldClass} resize-none text-sm`}
+                className={`${inputClass} resize-none`}
               />
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-xs text-ink-500">
-                  Próximo contato
+                <Field label="Próximo contato">
                   <input
                     type="datetime-local"
                     value={activityNext}
                     onChange={(event) => setActivityNext(event.target.value)}
-                    className={`${fieldClass} mt-1 text-sm [color-scheme:dark]`}
+                    className={inputClass}
                   />
-                </label>
-                <label className="text-xs text-ink-500">
-                  O que fazer
+                </Field>
+                <Field label="O que fazer">
                   <input
                     value={activityNextNote}
                     onChange={(event) => setActivityNextNote(event.target.value)}
                     placeholder="Ex.: mandar proposta"
-                    className={`${fieldClass} mt-1 text-sm`}
+                    className={inputClass}
                   />
-                </label>
+                </Field>
               </div>
-              {activityError && <p className="text-sm text-red-400">{activityError}</p>}
-              <div className="flex gap-2">
+              {activityError && <p className="text-sm text-rose-300">{activityError}</p>}
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setActivityType(null)}
@@ -388,7 +434,7 @@ export function SdrLeadDetails({
                 </button>
                 <button
                   disabled={activitySaving}
-                  className="flex-1 rounded-lg bg-auron-600 px-3 py-2 text-sm font-medium transition hover:bg-auron-500 disabled:opacity-60"
+                  className="rounded-lg bg-auron-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-auron-500 disabled:opacity-60"
                 >
                   {activitySaving ? 'Salvando...' : 'Registrar'}
                 </button>
@@ -397,265 +443,212 @@ export function SdrLeadDetails({
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input name="name" required defaultValue={lead.name} placeholder="Nome" className={fieldClass} />
+        {/* Corpo */}
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="pipeline-scrollbar flex-1 space-y-5 overflow-y-auto px-6 py-5">
+            <Section title="Próximo contato">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Quando">
+                  <input
+                    name="nextActionAt"
+                    type="datetime-local"
+                    defaultValue={toLocalInput(lead.next_action_at)}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="O que fazer">
+                  <input
+                    name="nextActionNote"
+                    defaultValue={lead.next_action_note ?? ''}
+                    placeholder="Ex.: ligar de novo"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            </Section>
 
-          <input name="phone" defaultValue={lead.phone ?? ''} placeholder="Telefone" className={fieldClass} />
+            <Section title="Negociação">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Etapa">
+                  <select
+                    name="stageId"
+                    value={selectedStageId}
+                    onChange={(event) => setSelectedStageId(event.target.value)}
+                    className={inputClass}
+                  >
+                    {stageOptions.map((stage) => (
+                      <option key={stage.id} value={stage.id}>
+                        {stage.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Frente">
+                  <select
+                    value={origin}
+                    onChange={(event) => setOrigin(normalizeOrigin(event.target.value))}
+                    className={inputClass}
+                  >
+                    <option value="trafego">Tráfego</option>
+                    <option value="prospeccao">Prospecção</option>
+                  </select>
+                </Field>
+              </div>
 
-          <input
-            name="email"
-            type="email"
-            defaultValue={lead.email ?? ''}
-            placeholder="E-mail"
-            className={fieldClass}
-          />
+              {(isMeeting || lead.meeting_at) && (
+                <Field
+                  label={`Reunião${
+                    lead.meeting_status
+                      ? ` · ${MEETING_STATUS_LABELS[lead.meeting_status as MeetingStatus] ?? lead.meeting_status}`
+                      : ''
+                  }`}
+                >
+                  <input
+                    name="meetingAt"
+                    type="datetime-local"
+                    required={isMeeting}
+                    defaultValue={toLocalInput(lead.meeting_at)}
+                    className={inputClass}
+                  />
+                </Field>
+              )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <input name="source" defaultValue={lead.source ?? ''} placeholder="Origem" className={fieldClass} />
-            <input
-              name="campaign"
-              defaultValue={lead.campaign ?? ''}
-              placeholder="Campanha"
-              className={fieldClass}
-            />
-          </div>
+              {isSaleStage && (
+                <Field label="Valor da venda (1ª mensalidade)">
+                  <input
+                    name="saleValue"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    defaultValue={lead.sale_value ?? ''}
+                    placeholder="0,00"
+                    className={inputClass}
+                  />
+                </Field>
+              )}
 
-          <div className={`grid gap-4 ${manager ? 'sm:grid-cols-2' : ''}`}>
-            <div>
-              <label className="mb-1.5 block text-xs text-ink-500">Frente</label>
-              <select
-                value={origin}
-                onChange={(event) => setOrigin(normalizeOrigin(event.target.value))}
-                className={fieldClass}
-              >
-                <option value="trafego">Tráfego (chegou pelo anúncio/site)</option>
-                <option value="prospeccao">Prospecção (SDR foi atrás)</option>
-              </select>
-            </div>
-
-            {manager && (
-              <div>
-                <label className="mb-1.5 block text-xs text-ink-500">SDR responsável</label>
-                <select name="sdrId" defaultValue={lead.sdr_id ?? ''} className={fieldClass}>
-                  <option value="">Nenhum</option>
-                  {sdrs.map((member) => (
-                    <option key={member.user_id} value={member.user_id}>
-                      {member.name}
+              {isLostStage && (
+                <Field label="Motivo da perda">
+                  <select name="lostReason" required defaultValue={lead.lost_reason ?? ''} className={inputClass}>
+                    <option value="" disabled>
+                      Escolha o motivo
                     </option>
+                    {LOST_REASONS.map((reason) => (
+                      <option key={reason} value={reason}>
+                        {reason}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
+              {manager && (
+                <Field label="SDR responsável (recebe a comissão)">
+                  <select name="sdrId" defaultValue={lead.sdr_id ?? ''} className={inputClass}>
+                    <option value="">Nenhum</option>
+                    {sdrs.map((member) => (
+                      <option key={member.user_id} value={member.user_id}>
+                        {member.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+            </Section>
+
+            <Section title="Contato">
+              <Field label="Nome">
+                <input name="name" required defaultValue={lead.name} className={inputClass} />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Telefone">
+                  <input name="phone" defaultValue={lead.phone ?? ''} className={inputClass} />
+                </Field>
+                <Field label="E-mail">
+                  <input name="email" type="email" defaultValue={lead.email ?? ''} className={inputClass} />
+                </Field>
+              </div>
+            </Section>
+
+            <Section title="Origem">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Origem">
+                  <input name="source" defaultValue={lead.source ?? ''} className={inputClass} />
+                </Field>
+                <Field label="Campanha">
+                  <input name="campaign" defaultValue={lead.campaign ?? ''} className={inputClass} />
+                </Field>
+              </div>
+              <p className="text-xs leading-5 text-ink-500">
+                <span className="font-medium text-ink-400">Meta:</span> {metaLine}
+              </p>
+            </Section>
+
+            <Section title="Observações">
+              <textarea
+                name="notes"
+                rows={4}
+                defaultValue={lead.notes ?? ''}
+                placeholder="Anotações sobre o lead"
+                className={`${inputClass} resize-none`}
+              />
+            </Section>
+
+            <section className="border-t border-ink-800/80 pt-5">
+              <button
+                type="button"
+                onClick={() => setShowHistory((value) => !value)}
+                className="flex w-full items-center justify-between text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-500 transition hover:text-ink-300"
+              >
+                Histórico e atividades ({timeline.length})
+                <ChevronDown
+                  className={`h-4 w-4 transition ${showHistory ? 'rotate-180' : ''}`}
+                  strokeWidth={2}
+                  aria-hidden
+                />
+              </button>
+
+              {showHistory && (
+                <ol className="mt-3 space-y-2.5 border-l border-ink-800 pl-4">
+                  {timeline.length === 0 && <li className="text-sm text-ink-500">Nenhum histórico ainda.</li>}
+                  {timeline.map((item) => (
+                    <li key={item.id} className="text-sm">
+                      <p className="text-ink-200">{item.text}</p>
+                      {item.note && <p className="text-ink-400">{item.note}</p>}
+                      <p className="text-xs text-ink-500">
+                        {formatDateTime(item.created_at)}
+                        {item.who && ` · ${item.who}`}
+                      </p>
+                    </li>
                   ))}
-                </select>
-              </div>
-            )}
+                </ol>
+              )}
+            </section>
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-xs text-ink-500">Etapa atual</label>
-            <select
-              name="stageId"
-              value={selectedStageId}
-              onChange={(event) => setSelectedStageId(event.target.value)}
-              className={fieldClass}
-            >
-              {stageOptions.map((stage) => (
-                <option key={stage.id} value={stage.id}>
-                  {stage.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
-            <p className="text-sm font-medium text-ink-200">Próximo contato</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <input
-                name="nextActionAt"
-                type="datetime-local"
-                defaultValue={toLocalInput(lead.next_action_at)}
-                className={`${fieldClass} text-sm [color-scheme:dark]`}
-              />
-              <input
-                name="nextActionNote"
-                defaultValue={lead.next_action_note ?? ''}
-                placeholder="O que fazer"
-                className={`${fieldClass} text-sm`}
-              />
-            </div>
-            <p className="mt-2 text-xs text-ink-500">Todo lead em andamento deve ter um próximo passo.</p>
-          </div>
-
-          {(isMeeting || lead.meeting_at) && (
-            <div className="rounded-xl border border-auron-500/20 bg-auron-500/5 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <label className="text-sm font-medium text-auron-200">Reunião</label>
-                {lead.meeting_status && (
-                  <span className="rounded-full bg-ink-800 px-2.5 py-1 text-[11px] text-ink-300">
-                    {MEETING_STATUS_LABELS[lead.meeting_status as MeetingStatus] ?? lead.meeting_status}
-                  </span>
-                )}
-              </div>
-              <input
-                name="meetingAt"
-                type="datetime-local"
-                required={isMeeting}
-                defaultValue={toLocalInput(lead.meeting_at)}
-                className={`${fieldClass} mt-3 text-sm [color-scheme:dark]`}
-              />
-            </div>
-          )}
-
-          {isLostStage && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
-              <label className="mb-2 block text-sm font-medium text-red-300">Motivo da perda</label>
-              <select
-                name="lostReason"
-                required
-                defaultValue={lead.lost_reason ?? ''}
-                className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-red-500"
+          {/* Rodapé fixo */}
+          <div className="border-t border-ink-800/80 px-6 py-4">
+            {error && <p className="mb-3 text-sm text-rose-300">{error}</p>}
+            <div className="flex items-center gap-3">
+              {manager && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting || loading}
+                  className="rounded-lg px-3 py-2.5 text-sm text-ink-500 transition hover:bg-rose-500/10 hover:text-rose-300 disabled:opacity-60"
+                >
+                  {deleting ? 'Excluindo...' : 'Excluir'}
+                </button>
+              )}
+              <button
+                disabled={loading}
+                className="ml-auto rounded-lg bg-auron-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-auron-500 disabled:opacity-60"
               >
-                <option value="" disabled>
-                  Escolha o motivo
-                </option>
-                {LOST_REASONS.map((reason) => (
-                  <option key={reason} value={reason}>
-                    {reason}
-                  </option>
-                ))}
-              </select>
+                {loading ? 'Salvando...' : 'Salvar alterações'}
+              </button>
             </div>
-          )}
-
-          {isSaleStage && (
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-              <label className="mb-2 block text-sm font-medium text-emerald-300">
-                Valor da venda (1ª mensalidade)
-              </label>
-              <input
-                name="saleValue"
-                type="number"
-                step="0.01"
-                min="0"
-                defaultValue={lead.sale_value ?? ''}
-                placeholder="R$ 0,00"
-                className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-emerald-500"
-              />
-              <p className="mt-2 text-xs text-ink-500">
-                Esse valor alimenta a Visão geral, a comissão do SDR e o evento Purchase da Meta.
-              </p>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-ink-200">Meta</p>
-                <p className="mt-1 text-xs text-ink-500">Retorno dos eventos enviados pelo CRM</p>
-              </div>
-              <span
-                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                  metaEligible ? 'bg-auron-500/10 text-auron-300' : 'bg-ink-800 text-ink-500'
-                }`}
-              >
-                {metaEligible ? (isLandingPage && !lead.ctwa_clid ? 'Site vinculado' : 'Anúncio vinculado') : 'Sem vínculo'}
-              </span>
-            </div>
-
-            {metaEligible ? (
-              <div className="mt-4 space-y-3 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-ink-400">Lead qualificado</span>
-                  {lead.meta_qualified_sent_at ? (
-                    <span className="text-right text-emerald-400">
-                      Enviado · {formatDateTime(lead.meta_qualified_sent_at)}
-                    </span>
-                  ) : (
-                    <span className="text-ink-600">Ainda não enviado</span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-ink-400">Venda</span>
-                  {lead.meta_purchase_sent_at ? (
-                    <span className="text-right text-emerald-400">
-                      Enviado · {formatDateTime(lead.meta_purchase_sent_at)}
-                    </span>
-                  ) : (
-                    <span className="text-ink-600">Ainda não enviado</span>
-                  )}
-                </div>
-
-                {lead.meta_last_error && (
-                  <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-300">
-                    Último erro da Meta: {lead.meta_last_error}
-                    {lead.meta_last_error_at && (
-                      <span className="mt-1 block text-red-400/70">{formatDateTime(lead.meta_last_error_at)}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="mt-4 text-xs leading-5 text-ink-500">
-                Esse lead não veio de um anúncio de WhatsApp nem do site com código de atendimento, então
-                nenhum evento é enviado para a Meta.
-              </p>
-            )}
           </div>
-
-          <textarea
-            name="notes"
-            rows={5}
-            defaultValue={lead.notes ?? ''}
-            placeholder="Observações sobre o lead"
-            className={`${fieldClass} resize-none`}
-          />
-
-          {error && <p className="text-sm text-red-400">{error}</p>}
-
-          <button
-            disabled={loading}
-            className="w-full rounded-lg bg-auron-600 px-4 py-3 font-medium transition hover:bg-auron-500 disabled:opacity-60"
-          >
-            {loading ? 'Salvando...' : 'Salvar alterações'}
-          </button>
         </form>
-
-        {manager && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={deleting || loading}
-            className="mt-3 w-full rounded-lg px-4 py-2.5 text-sm text-red-400/80 transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-60"
-          >
-            {deleting ? 'Excluindo...' : 'Excluir lead'}
-          </button>
-        )}
-
-        <div className="mt-8 border-t border-ink-800 pt-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-semibold">Histórico</h3>
-            <span className="text-xs text-ink-500">
-              {timeline.length} {timeline.length === 1 ? 'evento' : 'eventos'}
-            </span>
-          </div>
-
-          {timeline.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-ink-700 p-4 text-sm text-ink-500">
-              Nenhum histórico registrado ainda.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {timeline.map((item) => (
-                <div key={item.id} className="rounded-lg border border-ink-800 bg-ink-950 p-4">
-                  <p className="text-sm text-ink-200">{item.text}</p>
-                  {item.note && <p className="mt-1 text-sm text-ink-400">{item.note}</p>}
-                  <p className="mt-1 text-xs text-ink-500">
-                    {formatDateTime(item.created_at)}
-                    {item.who && ` · ${item.who}`}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )

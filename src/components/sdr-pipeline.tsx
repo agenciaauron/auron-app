@@ -1,17 +1,28 @@
 'use client'
 
-import { DragEvent, startTransition, useEffect, useState } from 'react'
+import { DragEvent, startTransition, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  AlarmClock,
+  CalendarCheck,
+  ChevronsLeft,
+  ChevronsRight,
+  MessageCircle,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react'
 import { LeadDeleteDialog } from '@/components/lead-delete-dialog'
 import { SdrLeadDetails } from '@/components/sdr-lead-details'
 import { StageChangeDialog, stageNeedsInput, type StageExtras } from '@/components/stage-change-dialog'
-import { AlarmClock, CalendarCheck, CheckCheck, Megaphone, MessageCircle, Trash2, TriangleAlert } from 'lucide-react'
 import {
   RECENT_DAYS,
+  displayMessage,
   formatPhone,
   idleDays,
   idleLabel,
+  isTemplateMessage,
   leadHeat,
+  templateMessages,
   whatsappUrl,
 } from '@/lib/lead-cleanup'
 import { dueLabel, dueState, formatDateTime, fromLocalInput, isManager, type TeamMember } from '@/lib/crm'
@@ -27,6 +38,8 @@ type MetaResult = {
 type Props = {
   stages: Stage[]
   leads: Lead[]
+  // Base completa, para reconhecer a mensagem padrão do anúncio.
+  allLeads?: Lead[]
   history: HistoryItem[]
   activities: Activity[]
   team: TeamMember[]
@@ -52,13 +65,10 @@ function sourceLabel(source: string) {
 }
 
 function formatCurrency(value: number | string) {
-  return Number(value).toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  })
+  return Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-export function SdrPipeline({ stages, leads, history, activities, team, role }: Props) {
+export function SdrPipeline({ stages, leads, allLeads, history, activities, team, role }: Props) {
   const router = useRouter()
   const manager = isManager(role)
   const [pendingMove, setPendingMove] = useState<PendingMove>(null)
@@ -68,13 +78,20 @@ export function SdrPipeline({ stages, leads, history, activities, team, role }: 
   const [savingLeadId, setSavingLeadId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null)
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set())
+  const [lostOpen, setLostOpen] = useState(false)
+  const [openLeadId, setOpenLeadId] = useState<string | null>(null)
   const [now] = useState(() => Date.now())
 
-  useEffect(() => {
+  // Dados novos do servidor (após router.refresh) substituem a cópia local.
+  const [prevLeads, setPrevLeads] = useState(leads)
+  if (leads !== prevLeads) {
+    setPrevLeads(leads)
     setLocalLeads(leads)
-  }, [leads])
+  }
 
+  const templates = useMemo(() => templateMessages(allLeads ?? leads), [allLeads, leads])
   const entryStageId = stages.find((stage) => !stage.is_won && !stage.is_lost)?.id
+  const openLead = localLeads.find((lead) => lead.id === openLeadId)
 
   function toggleOlder(stageId: string) {
     setExpandedStages((current) => {
@@ -100,17 +117,6 @@ export function SdrPipeline({ stages, leads, history, activities, team, role }: 
     }
   }
 
-  function handleDragStart(event: DragEvent<HTMLDivElement>, leadId: string) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', leadId)
-    setDraggingLeadId(leadId)
-  }
-
-  function handleDragEnd() {
-    setDraggingLeadId(null)
-    setOverStageId(null)
-  }
-
   function applyMetaResult(leadId: string, meta: MetaResult | null | undefined) {
     if (!meta) return
 
@@ -120,30 +126,15 @@ export function SdrPipeline({ stages, leads, history, activities, team, role }: 
 
         if (meta.status === 'sent' || meta.status === 'already_sent') {
           if (meta.event_name === 'QualifiedLead') {
-            return {
-              ...item,
-              meta_qualified_sent_at: meta.sent_at ?? item.meta_qualified_sent_at,
-              meta_last_error: null,
-              meta_last_error_at: null,
-            }
+            return { ...item, meta_qualified_sent_at: meta.sent_at ?? item.meta_qualified_sent_at, meta_last_error: null, meta_last_error_at: null }
           }
-
           if (meta.event_name === 'Purchase') {
-            return {
-              ...item,
-              meta_purchase_sent_at: meta.sent_at ?? item.meta_purchase_sent_at,
-              meta_last_error: null,
-              meta_last_error_at: null,
-            }
+            return { ...item, meta_purchase_sent_at: meta.sent_at ?? item.meta_purchase_sent_at, meta_last_error: null, meta_last_error_at: null }
           }
         }
 
         if (meta.status === 'error') {
-          return {
-            ...item,
-            meta_last_error: meta.error || 'Falha ao enviar evento à Meta.',
-            meta_last_error_at: new Date().toISOString(),
-          }
+          return { ...item, meta_last_error: meta.error || 'Falha ao enviar evento à Meta.', meta_last_error_at: new Date().toISOString() }
         }
 
         return item
@@ -172,9 +163,7 @@ export function SdrPipeline({ stages, leads, history, activities, team, role }: 
     const previousStageId = lead.stage_id
 
     setLocalLeads((current) =>
-      current.map((item) =>
-        item.id === leadId ? { ...item, stage_id: stageId } : item
-      )
+      current.map((item) => (item.id === leadId ? { ...item, stage_id: stageId } : item))
     )
     setSavingLeadId(leadId)
     setDraggingLeadId(null)
@@ -183,9 +172,7 @@ export function SdrPipeline({ stages, leads, history, activities, team, role }: 
     try {
       const response = await fetch('/api/leads/stage', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId,
           stageId,
@@ -233,9 +220,7 @@ export function SdrPipeline({ stages, leads, history, activities, team, role }: 
       }
     } catch (error) {
       setLocalLeads((current) =>
-        current.map((item) =>
-          item.id === leadId ? { ...item, stage_id: previousStageId } : item
-        )
+        current.map((item) => (item.id === leadId ? { ...item, stage_id: previousStageId } : item))
       )
       alert(error instanceof Error && error.message ? error.message : 'Não foi possível mover o lead. Tente novamente.')
     } finally {
@@ -243,285 +228,279 @@ export function SdrPipeline({ stages, leads, history, activities, team, role }: 
     }
   }
 
-  function handleDrop(event: DragEvent<HTMLElement>, stageId: string) {
-    event.preventDefault()
-    const leadId = event.dataTransfer.getData('text/plain') || draggingLeadId
-
-    if (leadId) {
-      void moveLead(leadId, stageId)
+  function dropHandlers(stageId: string) {
+    return {
+      onDragOver: (event: DragEvent<HTMLElement>) => {
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        setOverStageId(stageId)
+      },
+      onDragLeave: (event: DragEvent<HTMLElement>) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOverStageId(null)
+        }
+      },
+      onDrop: (event: DragEvent<HTMLElement>) => {
+        event.preventDefault()
+        const leadId = event.dataTransfer.getData('text/plain') || draggingLeadId
+        if (leadId) void moveLead(leadId, stageId)
+      },
     }
   }
 
   return (
     <>
-    <div className="pipeline-scrollbar flex gap-3 overflow-x-auto pb-3">
-      {stages.map((stage) => {
-        const stageLeads = localLeads.filter(
-          (lead) => lead.stage_id === stage.id
-        )
-        const isDropTarget = overStageId === stage.id && draggingLeadId !== null
+      <div className="pipeline-scrollbar flex gap-3 overflow-x-auto pb-3">
+        {stages.map((stage) => {
+          const stageLeads = localLeads.filter((lead) => lead.stage_id === stage.id)
+          const isDropTarget = overStageId === stage.id && draggingLeadId !== null
+          const dot = stage.is_won ? 'bg-emerald-400' : stage.is_lost ? 'bg-rose-400' : 'bg-auron-400'
 
-        // Novo lead e Desqualificado acumulam: mostra só os recentes e recolhe o resto.
-        const collapsible = stage.is_lost || stage.id === entryStageId
-        const recentLeads = collapsible
-          ? stageLeads.filter((lead) => idleDays(lead, now) < RECENT_DAYS)
-          : stageLeads
-        const olderLeads = collapsible
-          ? stageLeads.filter((lead) => idleDays(lead, now) >= RECENT_DAYS)
-          : []
-        const showOlder = expandedStages.has(stage.id)
-        const shownLeads = showOlder ? [...recentLeads, ...olderLeads] : recentLeads
-
-        return (
-          <section
-            key={stage.id}
-            onDragOver={(event) => {
-              event.preventDefault()
-              event.dataTransfer.dropEffect = 'move'
-              setOverStageId(stage.id)
-            }}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                setOverStageId(null)
-              }
-            }}
-            onDrop={(event) => handleDrop(event, stage.id)}
-            className={`flex min-h-[320px] w-[296px] shrink-0 flex-col rounded-2xl border p-3 transition-colors ${
-              isDropTarget
-                ? 'border-auron-500/60 bg-auron-500/[0.06]'
-                : 'border-ink-800/70 bg-ink-950/70'
-            }`}
-          >
-            <div className="mb-3 flex items-center justify-between px-1.5 pt-1">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    stage.is_won
-                      ? 'bg-emerald-400'
-                      : stage.is_lost
-                        ? 'bg-rose-400'
-                        : 'bg-auron-400'
-                  }`}
-                />
-                <h3 className="font-display text-[13px] font-semibold tracking-tight text-ink-100">
-                  {stage.name}
-                </h3>
-              </div>
-
-              <span className="tabular text-xs font-semibold text-ink-500">
-                {collapsible && olderLeads.length > 0
-                  ? `${recentLeads.length} de ${stageLeads.length}`
-                  : stageLeads.length}
-              </span>
-            </div>
-
-            <div className="flex-1 space-y-2">
-              {shownLeads.length === 0 && (
-                <div
-                  className={`rounded-xl border border-dashed px-4 py-8 text-center text-sm transition-colors ${
-                    isDropTarget
-                      ? 'border-auron-500/50 text-auron-300'
-                      : 'border-ink-800 text-ink-600'
-                  }`}
-                >
-                  {isDropTarget
-                    ? 'Solte o lead aqui'
-                    : olderLeads.length > 0
-                      ? `Nenhum lead nos últimos ${RECENT_DAYS} dias`
-                      : 'Nenhum lead'}
-                </div>
-              )}
-
-              {shownLeads.map((lead) => {
-                const leadHistory = history.filter(
-                  (item) => item.lead_id === lead.id
-                )
-                const isDragging = draggingLeadId === lead.id
-                const isSaving = savingLeadId === lead.id
-                const hasMetaSuccess = Boolean(
-                  lead.meta_qualified_sent_at || lead.meta_purchase_sent_at
-                )
-                const days = idleDays(lead, now)
-                const heat = stage.is_won || stage.is_lost ? 'cold' : leadHeat(days)
-                const waUrl = whatsappUrl(lead.phone)
-
-                return (
-                  <div
-                    key={lead.id}
-                    draggable={!isSaving}
-                    onDragStart={(event) => handleDragStart(event, lead.id)}
-                    onDragEnd={handleDragEnd}
-                    className={`group relative cursor-grab rounded-xl border border-ink-800/80 bg-ink-900 py-3 pl-4 pr-3 transition active:cursor-grabbing ${
-                      isDragging ? 'opacity-40' : 'hover:border-ink-700 hover:bg-[#1b182c]'
-                    } ${isSaving ? 'pointer-events-none opacity-60' : ''}`}
-                  >
-                    <span className="lead-heat" data-heat={heat} aria-hidden />
-
-                    <div className="flex items-baseline justify-between gap-3">
-                      <p className="truncate text-[15px] font-semibold text-ink-50">
-                        {lead.name}
-                      </p>
-                      <span
-                        className={`shrink-0 text-[11px] tabular ${
-                          heat === 'cool' ? 'text-amber-300/80' : 'text-ink-500'
-                        }`}
-                        title="Última atividade do lead"
-                      >
-                        {isSaving ? 'Salvando…' : idleLabel(days)}
-                      </span>
-                    </div>
-
-                    <div className="mt-1 flex items-center gap-2 text-xs text-ink-400">
-                      {lead.phone && <span className="font-mono">{formatPhone(lead.phone)}</span>}
-                      {lead.source && (
-                        <span className="rounded-md bg-ink-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-300">
-                          {sourceLabel(lead.source)}
-                        </span>
-                      )}
-                    </div>
-
-                    {lead.last_message && (
-                      <p className="mt-2.5 line-clamp-2 text-[13px] leading-5 text-ink-300">
-                        {lead.last_message}
-                      </p>
-                    )}
-
-                    {lead.campaign && (
-                      <p className="mt-2 flex items-center gap-1.5 truncate text-[11px] text-ink-500">
-                        <Megaphone className="h-3 w-3 shrink-0" strokeWidth={2} aria-hidden />
-                        <span className="truncate">{lead.campaign}</span>
-                      </p>
-                    )}
-
-                    {stage.is_lost && lead.lost_reason && (
-                      <p className="mt-2 inline-flex rounded-md bg-rose-400/10 px-2 py-0.5 text-[11px] font-semibold text-rose-300">
-                        {lead.lost_reason}
-                      </p>
-                    )}
-
-                    {stage.is_won && lead.sale_value != null && (
-                      <p className="mt-2 font-display text-lg font-semibold tabular text-emerald-300">
-                        {formatCurrency(lead.sale_value)}
-                      </p>
-                    )}
-
-                    {!stage.is_won && !stage.is_lost && lead.meeting_at && lead.meeting_status === 'agendada' && (
-                      <p className="mt-2 flex items-center gap-1.5 text-[12px] font-medium text-auron-300">
-                        <CalendarCheck className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-                        Reunião {formatDateTime(lead.meeting_at)}
-                      </p>
-                    )}
-
-                    {!stage.is_won && !stage.is_lost && lead.next_action_at && (
-                      <p
-                        className={`mt-2 flex items-center gap-1.5 text-[12px] font-medium ${
-                          dueState(lead.next_action_at, now) === 'overdue'
-                            ? 'text-rose-300'
-                            : dueState(lead.next_action_at, now) === 'today'
-                              ? 'text-amber-300'
-                              : 'text-ink-400'
-                        }`}
-                        title={lead.next_action_note ?? 'Próximo contato'}
-                      >
-                        <AlarmClock className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
-                        <span className="truncate">
-                          {dueLabel(lead.next_action_at, now)}
-                          {lead.next_action_note && ` · ${lead.next_action_note}`}
-                        </span>
-                      </p>
-                    )}
-
-                    <div className="mt-3 flex items-center gap-1 border-t border-ink-800/70 pt-2.5">
-                      <SdrLeadDetails
-                        lead={lead}
-                        stages={stages}
-                        history={leadHistory}
-                        activities={activities.filter((item) => item.lead_id === lead.id)}
-                        team={team}
-                        role={role}
-                        triggerLabel="Abrir ficha"
-                        triggerClassName="mr-auto rounded-md px-1.5 py-1 text-[13px] font-semibold text-ink-300 transition hover:bg-ink-800 hover:text-ink-50"
-                      />
-
-                      {(lead.ctwa_clid || lead.meta_qualified_sent_at || lead.meta_last_error) &&
-                        (lead.meta_last_error ? (
-                          <span title="Meta: erro no último envio" className="p-1.5 text-rose-400">
-                            <TriangleAlert className="h-4 w-4" strokeWidth={2} aria-hidden />
-                          </span>
-                        ) : hasMetaSuccess ? (
-                          <span title="Meta: evento enviado" className="p-1.5 text-emerald-400">
-                            <CheckCheck className="h-4 w-4" strokeWidth={2} aria-hidden />
-                          </span>
-                        ) : null)}
-
-                      {waUrl && (
-                        <a
-                          href={waUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="Abrir conversa no WhatsApp"
-                          aria-label={`Abrir conversa com ${lead.name} no WhatsApp`}
-                          className="rounded-md p-1.5 text-ink-400 transition hover:bg-whatsapp/15 hover:text-whatsapp"
-                        >
-                          <MessageCircle className="h-4 w-4" strokeWidth={2} aria-hidden />
-                        </a>
-                      )}
-
-                      {manager && !stage.is_won && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDeleteTarget({ leadIds: [lead.id], title: `Excluir ${lead.name}?` })
-                          }
-                          title="Excluir lead"
-                          aria-label={`Excluir ${lead.name}`}
-                          className="rounded-md p-1.5 text-ink-500 transition hover:bg-rose-500/10 hover:text-rose-300"
-                        >
-                          <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-
-              {olderLeads.length > 0 && (
+          if (stage.is_lost && !lostOpen) {
+            return (
+              <section
+                key={stage.id}
+                {...dropHandlers(stage.id)}
+                className={`flex w-14 shrink-0 flex-col items-center rounded-2xl border py-4 transition-colors ${
+                  isDropTarget ? 'border-rose-400/60 bg-rose-500/[0.06]' : 'border-ink-800/70 bg-ink-950/70'
+                }`}
+              >
                 <button
                   type="button"
-                  onClick={() => toggleOlder(stage.id)}
-                  className="w-full rounded-lg border border-dashed border-ink-700 px-3 py-2.5 text-sm text-ink-400 transition hover:border-ink-500 hover:text-ink-200"
+                  onClick={() => setLostOpen(true)}
+                  title={`Mostrar ${stage.name}`}
+                  className="flex flex-1 flex-col items-center gap-3 text-ink-400 transition hover:text-ink-100"
                 >
-                  {showOlder
-                    ? 'Recolher leads antigos'
-                    : `Ver ${olderLeads.length} ${olderLeads.length === 1 ? 'lead antigo' : 'leads antigos'} (+${RECENT_DAYS} dias)`}
+                  <ChevronsLeft className="h-4 w-4" strokeWidth={2} aria-hidden />
+                  <span className={`h-2 w-2 rounded-full ${dot}`} />
+                  <span className="text-xs font-semibold tabular text-ink-500">{stageLeads.length}</span>
+                  <span className="font-display text-[13px] font-semibold tracking-tight [writing-mode:vertical-rl]">
+                    {stage.name}
+                  </span>
                 </button>
-              )}
-            </div>
-          </section>
-        )
-      })}
-    </div>
+              </section>
+            )
+          }
 
-    {deleteTarget && (
-      <LeadDeleteDialog
-        {...deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onDone={handleDeleteDone}
-      />
-    )}
+          const collapsible = stage.is_lost || stage.id === entryStageId
+          const recentLeads = collapsible ? stageLeads.filter((lead) => idleDays(lead, now) < RECENT_DAYS) : stageLeads
+          const olderLeads = collapsible ? stageLeads.filter((lead) => idleDays(lead, now) >= RECENT_DAYS) : []
+          const showOlder = expandedStages.has(stage.id)
+          const shownLeads = showOlder ? [...recentLeads, ...olderLeads] : recentLeads
 
-    {pendingMove && (
-      <StageChangeDialog
-        stage={pendingMove.stage}
-        leadName={pendingMove.leadName}
-        onCancel={() => setPendingMove(null)}
-        onConfirm={(extras) => {
-          const move = pendingMove
-          setPendingMove(null)
-          void moveLead(move.leadId, move.stage.id, extras)
-        }}
-      />
-    )}
+          return (
+            <section
+              key={stage.id}
+              {...dropHandlers(stage.id)}
+              className={`flex min-h-[320px] min-w-[220px] flex-1 flex-col rounded-2xl border p-2.5 transition-colors ${
+                isDropTarget ? 'border-auron-500/60 bg-auron-500/[0.06]' : 'border-ink-800/70 bg-ink-950/70'
+              }`}
+            >
+              <div className="mb-2.5 flex items-center justify-between px-1.5 pt-1">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${dot}`} />
+                  <h3 className="font-display text-[13px] font-semibold tracking-tight text-ink-100">{stage.name}</h3>
+                  <span className="rounded-full bg-ink-800/80 px-2 py-0.5 text-[11px] font-semibold tabular text-ink-400">
+                    {stageLeads.length}
+                  </span>
+                </div>
+
+                {stage.is_lost && (
+                  <button
+                    type="button"
+                    onClick={() => setLostOpen(false)}
+                    title="Recolher coluna"
+                    className="rounded-md p-1 text-ink-500 transition hover:bg-ink-800 hover:text-ink-200"
+                  >
+                    <ChevronsRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex-1 space-y-2">
+                {shownLeads.length === 0 && (
+                  <div
+                    className={`rounded-xl border border-dashed px-4 py-8 text-center text-sm transition-colors ${
+                      isDropTarget ? 'border-auron-500/50 text-auron-300' : 'border-ink-800 text-ink-600'
+                    }`}
+                  >
+                    {isDropTarget ? 'Solte o lead aqui' : olderLeads.length > 0 ? `Nada nos últimos ${RECENT_DAYS} dias` : 'Nenhum lead'}
+                  </div>
+                )}
+
+                {shownLeads.map((lead) => {
+                  const isDragging = draggingLeadId === lead.id
+                  const isSaving = savingLeadId === lead.id
+                  const days = idleDays(lead, now)
+                  const heat = stage.is_won || stage.is_lost ? 'cold' : leadHeat(days)
+                  const waUrl = whatsappUrl(lead.phone)
+                  const showMessage = !isTemplateMessage(lead.last_message, templates)
+                  const active = !stage.is_won && !stage.is_lost
+                  const due = active && lead.next_action_at ? dueState(lead.next_action_at, now) : null
+
+                  return (
+                    <div
+                      key={lead.id}
+                      role="button"
+                      tabIndex={0}
+                      draggable={!isSaving}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData('text/plain', lead.id)
+                        setDraggingLeadId(lead.id)
+                      }}
+                      onDragEnd={() => {
+                        setDraggingLeadId(null)
+                        setOverStageId(null)
+                      }}
+                      onClick={() => setOpenLeadId(lead.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') setOpenLeadId(lead.id)
+                      }}
+                      className={`group relative cursor-pointer rounded-xl border border-ink-800/80 bg-ink-900 py-2.5 pl-3.5 pr-3 transition active:cursor-grabbing ${
+                        isDragging ? 'opacity-40' : 'hover:border-ink-700 hover:bg-[#1b182c]'
+                      } ${isSaving ? 'pointer-events-none opacity-60' : ''}`}
+                    >
+                      <span className="lead-heat" data-heat={heat} aria-hidden />
+
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="truncate text-[14px] font-semibold text-ink-50">{lead.name}</p>
+                        <span className={`shrink-0 text-[11px] tabular ${heat === 'cool' ? 'text-amber-300/80' : 'text-ink-500'}`}>
+                          {isSaving ? 'Salvando…' : idleLabel(days)}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 flex items-center gap-2 text-xs text-ink-500">
+                        {lead.phone && <span className="font-mono">{formatPhone(lead.phone)}</span>}
+                        {lead.source && (
+                          <span className="rounded bg-ink-800 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider text-ink-400">
+                            {sourceLabel(lead.source)}
+                          </span>
+                        )}
+                        {lead.meta_last_error && (
+                          <span title="Meta: erro no último envio" className="text-rose-400">
+                            <TriangleAlert className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                          </span>
+                        )}
+                      </div>
+
+                      {showMessage && lead.last_message && (
+                        <p className="mt-2 line-clamp-2 text-[13px] leading-5 text-ink-300">{displayMessage(lead.last_message)}</p>
+                      )}
+
+                      {active && lead.meeting_at && lead.meeting_status === 'agendada' ? (
+                        <p className="mt-2 flex items-center gap-1.5 text-[12px] text-auron-300">
+                          <CalendarCheck className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+                          Reunião {formatDateTime(lead.meeting_at)}
+                        </p>
+                      ) : (
+                        due && (
+                          <p
+                            className={`mt-2 flex items-center gap-1.5 text-[12px] ${
+                              due === 'overdue' ? 'text-rose-300' : due === 'today' ? 'text-amber-200' : 'text-ink-400'
+                            }`}
+                            title={lead.next_action_note ?? 'Próximo contato'}
+                          >
+                            <AlarmClock className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+                            <span className="truncate">
+                              {dueLabel(lead.next_action_at!, now)}
+                              {lead.next_action_note && ` · ${lead.next_action_note}`}
+                            </span>
+                          </p>
+                        )
+                      )}
+
+                      {stage.is_lost && lead.lost_reason && (
+                        <p className="mt-2 inline-flex rounded-md bg-rose-400/10 px-2 py-0.5 text-[11px] font-semibold text-rose-300">
+                          {lead.lost_reason}
+                        </p>
+                      )}
+
+                      {stage.is_won && lead.sale_value != null && (
+                        <p className="mt-1.5 font-display text-base font-semibold tabular text-emerald-300">
+                          {formatCurrency(lead.sale_value)}
+                        </p>
+                      )}
+
+                      <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 rounded-lg bg-ink-900/95 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                        {waUrl && (
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            title="Abrir conversa no WhatsApp"
+                            aria-label={`Abrir conversa com ${lead.name} no WhatsApp`}
+                            className="rounded-md p-1.5 text-ink-400 transition hover:bg-whatsapp/15 hover:text-whatsapp"
+                          >
+                            <MessageCircle className="h-4 w-4" strokeWidth={2} aria-hidden />
+                          </a>
+                        )}
+
+                        {manager && !stage.is_won && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setDeleteTarget({ leadIds: [lead.id], title: `Excluir ${lead.name}?` })
+                            }}
+                            title="Excluir lead"
+                            aria-label={`Excluir ${lead.name}`}
+                            className="rounded-md p-1.5 text-ink-500 transition hover:bg-rose-500/10 hover:text-rose-300"
+                          >
+                            <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {olderLeads.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => toggleOlder(stage.id)}
+                    className="w-full rounded-lg px-3 py-2 text-xs text-ink-500 transition hover:bg-ink-900 hover:text-ink-200"
+                  >
+                    {showOlder ? 'Recolher leads antigos' : `+ ${olderLeads.length} ${olderLeads.length === 1 ? 'lead antigo' : 'leads antigos'}`}
+                  </button>
+                )}
+              </div>
+            </section>
+          )
+        })}
+      </div>
+
+      {openLead && (
+        <SdrLeadDetails
+          key={openLead.id}
+          lead={openLead}
+          stages={stages}
+          history={history.filter((item) => item.lead_id === openLead.id)}
+          activities={activities.filter((item) => item.lead_id === openLead.id)}
+          team={team}
+          role={role}
+          open
+          onClose={() => setOpenLeadId(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <LeadDeleteDialog {...deleteTarget} onClose={() => setDeleteTarget(null)} onDone={handleDeleteDone} />
+      )}
+
+      {pendingMove && (
+        <StageChangeDialog
+          stage={pendingMove.stage}
+          leadName={pendingMove.leadName}
+          onCancel={() => setPendingMove(null)}
+          onConfirm={(extras) => {
+            const move = pendingMove
+            setPendingMove(null)
+            void moveLead(move.leadId, move.stage.id, extras)
+          }}
+        />
+      )}
     </>
   )
 }

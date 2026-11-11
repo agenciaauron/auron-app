@@ -53,7 +53,8 @@ export function SdrWorkspace({ userId, role, firstName, stages, leads, history, 
         <SdrNewLeadForm />
       </header>
 
-      <div className="mb-7 flex gap-1 overflow-x-auto border-b border-ink-800" role="tablist">
+      {/* Sem overflow aqui: a borda de baixo das abas gerava uma barrinha de rolagem. */}
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-ink-800" role="tablist">
         {TABS.map((item) => {
           const Icon = item.icon
           const active = tab === item.key
