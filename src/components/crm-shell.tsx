@@ -5,18 +5,29 @@ import { ReactNode, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   BarChart3,
+  CalendarCheck,
   FileSignature,
+  HandCoins,
   LayoutDashboard,
   Megaphone,
   UsersRound,
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
+import { ROLE_LABELS, isManager } from '@/lib/crm'
 
 type Props = {
   companyName: string
   role: string
-  activeItem: 'overview' | 'leads' | 'campaigns' | 'contracts' | 'finance' | 'reports'
+  activeItem:
+    | 'today'
+    | 'overview'
+    | 'leads'
+    | 'campaigns'
+    | 'commissions'
+    | 'contracts'
+    | 'finance'
+    | 'reports'
   children: ReactNode
 }
 
@@ -26,22 +37,19 @@ type NavItem = {
   href: string
   icon: LucideIcon
   enabled: boolean
+  managerOnly?: boolean
 }
 
 const navigation: NavItem[] = [
+  { key: 'today', label: 'Hoje', href: '/hoje', icon: CalendarCheck, enabled: true },
   { key: 'overview', label: 'Visão geral', href: '/dashboard', icon: LayoutDashboard, enabled: true },
   { key: 'leads', label: 'Leads', href: '/leads', icon: UsersRound, enabled: true },
-  { key: 'campaigns', label: 'Campanhas', href: '/campanhas', icon: Megaphone, enabled: true },
-  { key: 'finance', label: 'Financeiro', href: '/financeiro', icon: Wallet, enabled: true },
-  { key: 'contracts', label: 'Contratos', href: '#', icon: FileSignature, enabled: false },
-  { key: 'reports', label: 'Relatórios', href: '#', icon: BarChart3, enabled: false },
+  { key: 'commissions', label: 'Comissões', href: '/comissoes', icon: HandCoins, enabled: true },
+  { key: 'campaigns', label: 'Campanhas', href: '/campanhas', icon: Megaphone, enabled: true, managerOnly: true },
+  { key: 'finance', label: 'Financeiro', href: '/financeiro', icon: Wallet, enabled: true, managerOnly: true },
+  { key: 'contracts', label: 'Contratos', href: '#', icon: FileSignature, enabled: false, managerOnly: true },
+  { key: 'reports', label: 'Relatórios', href: '#', icon: BarChart3, enabled: false, managerOnly: true },
 ]
-
-const roleLabels: Record<string, string> = {
-  owner: 'Sócio',
-  admin: 'Administrador',
-  member: 'Equipe',
-}
 
 function initials(name: string) {
   return name
@@ -54,13 +62,14 @@ function initials(name: string) {
 
 export function CrmShell({ companyName, role, activeItem, children }: Props) {
   const router = useRouter()
+  const items = navigation.filter((item) => !item.managerOnly || isManager(role))
 
   useEffect(() => {
-    router.prefetch('/dashboard')
-    router.prefetch('/leads')
-    router.prefetch('/campanhas')
-    router.prefetch('/financeiro')
-  }, [router])
+    items
+      .filter((item) => item.enabled)
+      .forEach((item) => router.prefetch(item.href))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, role])
 
   return (
     <div className="min-h-screen bg-ink-1000 text-ink-100">
@@ -82,7 +91,7 @@ export function CrmShell({ companyName, role, activeItem, children }: Props) {
         </div>
 
         <nav className="flex-1 space-y-0.5 px-3 py-4" aria-label="Menu principal">
-          {navigation.map((item) => {
+          {items.map((item) => {
             const active = activeItem === item.key
             const Icon = item.icon
 
@@ -135,7 +144,7 @@ export function CrmShell({ companyName, role, activeItem, children }: Props) {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-ink-100">{companyName}</p>
-              <p className="text-xs text-ink-500">{roleLabels[role] ?? role}</p>
+              <p className="text-xs text-ink-500">{ROLE_LABELS[role] ?? role}</p>
             </div>
           </div>
         </div>
@@ -147,7 +156,7 @@ export function CrmShell({ companyName, role, activeItem, children }: Props) {
           <p className="font-display text-sm font-semibold">Auron CRM</p>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-2" aria-label="Menu principal">
-          {navigation
+          {items
             .filter((item) => item.enabled)
             .map((item) => {
               const Icon = item.icon

@@ -2,20 +2,20 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-
-type Stage = {
-  id: string
-  name: string
-}
+import { StageChangeDialog, stageNeedsInput, type StageExtras } from '@/components/stage-change-dialog'
+import { fromLocalInput } from '@/lib/crm'
+import type { Stage } from '@/lib/lead-types'
 
 type Props = {
   leadId: string
+  leadName: string
   currentStageId: string | null
   stages: Stage[]
 }
 
 export function LeadStageSelect({
   leadId,
+  leadName,
   currentStageId,
   stages,
 }: Props) {
@@ -23,8 +23,18 @@ export function LeadStageSelect({
 
   const [stageId, setStageId] = useState(currentStageId ?? '')
   const [loading, setLoading] = useState(false)
+  const [pendingStage, setPendingStage] = useState<Stage | null>(null)
 
-  async function changeStage(newStageId: string) {
+  function requestChange(newStageId: string) {
+    const stage = stages.find((item) => item.id === newStageId)
+    if (stageNeedsInput(stage)) {
+      setPendingStage(stage!)
+      return
+    }
+    void changeStage(newStageId)
+  }
+
+  async function changeStage(newStageId: string, extras?: StageExtras) {
     setStageId(newStageId)
     setLoading(true)
 
@@ -36,6 +46,8 @@ export function LeadStageSelect({
       body: JSON.stringify({
         leadId,
         stageId: newStageId,
+        lostReason: extras?.lostReason,
+        meetingAt: extras?.meetingAt ? fromLocalInput(extras.meetingAt) : undefined,
       }),
     })
 
@@ -43,7 +55,7 @@ export function LeadStageSelect({
 
     if (!response.ok) {
       setStageId(currentStageId ?? '')
-      alert('Não foi possível alterar a etapa.')
+      alert(result.error || 'Não foi possível alterar a etapa.')
       setLoading(false)
       return
     }
@@ -61,17 +73,32 @@ export function LeadStageSelect({
   }
 
   return (
-    <select
-      value={stageId}
-      disabled={loading}
-      onChange={(event) => changeStage(event.target.value)}
-      className="mt-3 w-full rounded-md border border-ink-700 bg-ink-900 px-3 py-2 text-sm text-white outline-none disabled:opacity-60"
-    >
-      {stages.map((stage) => (
-        <option key={stage.id} value={stage.id}>
-          {stage.name}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        value={stageId}
+        disabled={loading}
+        onChange={(event) => requestChange(event.target.value)}
+        className="mt-3 w-full rounded-md border border-ink-700 bg-ink-900 px-3 py-2 text-sm text-white outline-none disabled:opacity-60"
+      >
+        {stages.map((stage) => (
+          <option key={stage.id} value={stage.id}>
+            {stage.name}
+          </option>
+        ))}
+      </select>
+
+      {pendingStage && (
+        <StageChangeDialog
+          stage={pendingStage}
+          leadName={leadName}
+          onCancel={() => setPendingStage(null)}
+          onConfirm={(extras) => {
+            const stage = pendingStage
+            setPendingStage(null)
+            void changeStage(stage.id, extras)
+          }}
+        />
+      )}
+    </>
   )
 }

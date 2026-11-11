@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { CrmShell } from '@/components/crm-shell'
 import { CampaignsWorkspace } from '@/components/campaigns-workspace'
 import { createClient } from '@/lib/supabase/server'
+import { isManager } from '@/lib/crm'
 
 // O Supabase devolve no máximo 1000 linhas por consulta; o gasto diário por anúncio passa disso rápido.
 async function fetchAll<T>(
@@ -41,6 +42,11 @@ export default async function CampaignsPage() {
         Nenhuma empresa vinculada.
       </main>
     )
+  }
+
+  // SDR não acessa essa página.
+  if (!isManager(membership.role)) {
+    redirect('/hoje')
   }
 
   const companyId = membership.company_id

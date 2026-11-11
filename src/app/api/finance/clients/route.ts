@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { requireApiContext } from '@/lib/crm-context'
 
 const validStatuses = new Set(['active', 'paused', 'cancelled'])
 const validCycles = new Set(['monthly', 'biweekly'])
@@ -52,6 +53,10 @@ async function getContext() {
 }
 
 export async function POST(request: Request) {
+  // Só dono/administrador.
+  const guard = await requireApiContext({ managerOnly: true })
+  if (guard.error) return guard.error
+
   const context = await getContext()
   if (context.error) return context.error
   if (!context.companyId) return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 })
@@ -97,6 +102,10 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  // Só dono/administrador.
+  const guard = await requireApiContext({ managerOnly: true })
+  if (guard.error) return guard.error
+
   const context = await getContext()
   if (context.error) return context.error
   if (!context.companyId) return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 })
@@ -154,6 +163,10 @@ export async function PATCH(request: Request) {
 
 // Exclui o cliente e, por cascata no banco, todo o histórico de pagamentos dele.
 export async function DELETE(request: Request) {
+  // Só dono/administrador.
+  const guard = await requireApiContext({ managerOnly: true })
+  if (guard.error) return guard.error
+
   const context = await getContext()
   if (context.error) return context.error
   if (!context.companyId) return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 })

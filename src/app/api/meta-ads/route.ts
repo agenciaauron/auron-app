@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { requireApiContext } from '@/lib/crm-context'
 import { normalizeAdAccountId, syncMetaAdInsights } from '@/lib/meta-ads'
 
 async function getContext() {
@@ -28,6 +29,10 @@ async function getContext() {
 
 // Salva a conta de anúncios ({ adAccountId }) e já faz a primeira sincronização.
 export async function PUT(request: Request) {
+  // Só dono/administrador.
+  const guard = await requireApiContext({ managerOnly: true })
+  if (guard.error) return guard.error
+
   const context = await getContext()
   if (context.error) return context.error
   if (!context.companyId) return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 })
@@ -73,6 +78,10 @@ export async function PUT(request: Request) {
 
 // Atualiza o gasto dos últimos dias.
 export async function POST() {
+  // Só dono/administrador.
+  const guard = await requireApiContext({ managerOnly: true })
+  if (guard.error) return guard.error
+
   const context = await getContext()
   if (context.error) return context.error
   if (!context.companyId) return NextResponse.json({ error: 'Empresa não encontrada' }, { status: 400 })

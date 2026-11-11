@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { CrmShell } from '@/components/crm-shell'
 import { FinanceWorkspace } from '@/components/finance-workspace'
 import { createClient } from '@/lib/supabase/server'
+import { isManager } from '@/lib/crm'
 
 export default async function FinancePage() {
   const supabase = await createClient()
@@ -26,6 +27,11 @@ export default async function FinancePage() {
         Nenhuma empresa vinculada.
       </main>
     )
+  }
+
+  // SDR não acessa essa página.
+  if (!isManager(membership.role)) {
+    redirect('/hoje')
   }
 
   const companyId = membership.company_id

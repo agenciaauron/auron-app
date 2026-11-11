@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { requireApiContext } from '@/lib/crm-context'
 
 const MAX_LEADS = 500
 
 export async function POST(request: Request) {
+  // Só dono/administrador.
+  const guard = await requireApiContext({ managerOnly: true })
+  if (guard.error) return guard.error
+
   const supabase = await createClient()
 
   const { data: claimsData } = await supabase.auth.getClaims()

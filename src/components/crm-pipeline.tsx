@@ -4,7 +4,8 @@ import { DragEvent, startTransition, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { LeadDeleteDialog } from '@/components/lead-delete-dialog'
 import { LeadDetails } from '@/components/lead-details'
-import { CheckCheck, Megaphone, MessageCircle, Trash2, TriangleAlert } from 'lucide-react'
+import { StageChangeDialog, stageNeedsInput, type StageExtras } from '@/components/stage-change-dialog'
+import { AlarmClock, CalendarCheck, CheckCheck, Megaphone, MessageCircle, Trash2, TriangleAlert } from 'lucide-react'
 import {
   RECENT_DAYS,
   formatPhone,
@@ -13,45 +14,8 @@ import {
   leadHeat,
   whatsappUrl,
 } from '@/lib/lead-cleanup'
-
-type Stage = {
-  id: string
-  name: string
-  position: number
-  is_won: boolean
-  is_lost: boolean
-}
-
-type Lead = {
-  id: string
-  name: string
-  phone: string | null
-  email: string | null
-  source: string | null
-  campaign: string | null
-  notes: string | null
-  stage_id: string | null
-  sale_value: number | string | null
-  created_at: string
-  last_message: string | null
-  last_message_at: string | null
-  lost_reason: string | null
-  integration_source: string | null
-  ctwa_clid: string | null
-  meta_qualified_sent_at: string | null
-  meta_purchase_sent_at: string | null
-  meta_last_error: string | null
-  meta_last_error_at: string | null
-}
-
-type HistoryItem = {
-  id: string
-  lead_id: string
-  event_type: string
-  from_stage_id: string | null
-  to_stage_id: string | null
-  created_at: string
-}
+import { dueLabel, dueState, formatDateTime, fromLocalInput, isManager, type TeamMember } from '@/lib/crm'
+import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
 
 type MetaResult = {
   status?: 'sent' | 'already_sent' | 'waiting_value' | 'not_eligible' | 'error'
@@ -64,7 +28,16 @@ type Props = {
   stages: Stage[]
   leads: Lead[]
   history: HistoryItem[]
+  activities: Activity[]
+  team: TeamMember[]
+  role: string
 }
+
+type PendingMove = {
+  leadId: string
+  leadName: string
+  stage: Stage
+} | null
 
 type DeleteTarget = {
   leadIds: string[]
@@ -85,8 +58,10 @@ function formatCurrency(value: number | string) {
   })
 }
 
-export function CrmPipeline({ stages, leads, history }: Props) {
+export function CrmPipeline({ stages, leads, history, activities, team, role }: Props) {
   const router = useRouter()
+  const manager = isManager(role)
+  const [pendingMove, setPendingMove] = useState<PendingMove>(null)
   const [localLeads, setLocalLeads] = useState(leads)
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null)
   const [overStageId, setOverStageId] = useState<string | null>(null)
@@ -176,12 +151,21 @@ export function CrmPipeline({ stages, leads, history }: Props) {
     )
   }
 
-  async function moveLead(leadId: string, stageId: string) {
+  async function moveLead(leadId: string, stageId: string, extras?: StageExtras) {
     const lead = localLeads.find((item) => item.id === leadId)
 
     if (!lead || lead.stage_id === stageId || savingLeadId === leadId) {
       setDraggingLeadId(null)
       setOverStageId(null)
+      return
+    }
+
+    // Perda pede o motivo e Reunião pede a data antes de mover.
+    const targetStage = stages.find((stage) => stage.id === stageId)
+    if (!extras && stageNeedsInput(targetStage)) {
+      setDraggingLeadId(null)
+      setOverStageId(null)
+      setPendingMove({ leadId, leadName: lead.name, stage: targetStage! })
       return
     }
 
@@ -202,13 +186,35 @@ export function CrmPipeline({ stages, leads, history }: Props) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ leadId, stageId }),
+        body: JSON.stringify({
+          leadId,
+          stageId,
+          lostReason: extras?.lostReason,
+          // Converte no navegador: o servidor roda em UTC e erraria o fuso.
+          meetingAt: extras?.meetingAt ? fromLocalInput(extras.meetingAt) : undefined,
+        }),
       })
 
       const result = await response.json()
 
       if (!response.ok) {
         throw new Error(result.error || 'Não foi possível mover o lead.')
+      }
+
+      if (extras?.lostReason || extras?.meetingAt) {
+        setLocalLeads((current) =>
+          current.map((item) =>
+            item.id === leadId
+              ? {
+                  ...item,
+                  ...(extras.lostReason ? { lost_reason: extras.lostReason } : {}),
+                  ...(extras.meetingAt
+                    ? { meeting_at: new Date(extras.meetingAt).toISOString(), meeting_status: 'agendada' }
+                    : {}),
+                }
+              : item
+          )
+        )
       }
 
       applyMetaResult(leadId, result.meta)
@@ -224,13 +230,13 @@ export function CrmPipeline({ stages, leads, history }: Props) {
       if (result.meta?.status === 'error') {
         alert(`Lead movido, mas a Meta não confirmou o evento: ${result.meta.error || 'erro desconhecido'}`)
       }
-    } catch {
+    } catch (error) {
       setLocalLeads((current) =>
         current.map((item) =>
           item.id === leadId ? { ...item, stage_id: previousStageId } : item
         )
       )
-      alert('Não foi possível mover o lead. Tente novamente.')
+      alert(error instanceof Error && error.message ? error.message : 'Não foi possível mover o lead. Tente novamente.')
     } finally {
       setSavingLeadId(null)
     }
@@ -398,16 +404,45 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                       </p>
                     )}
 
+                    {!stage.is_won && !stage.is_lost && lead.meeting_at && lead.meeting_status === 'agendada' && (
+                      <p className="mt-2 flex items-center gap-1.5 text-[12px] font-medium text-auron-300">
+                        <CalendarCheck className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                        Reunião {formatDateTime(lead.meeting_at)}
+                      </p>
+                    )}
+
+                    {!stage.is_won && !stage.is_lost && lead.next_action_at && (
+                      <p
+                        className={`mt-2 flex items-center gap-1.5 text-[12px] font-medium ${
+                          dueState(lead.next_action_at, now) === 'overdue'
+                            ? 'text-rose-300'
+                            : dueState(lead.next_action_at, now) === 'today'
+                              ? 'text-amber-300'
+                              : 'text-ink-400'
+                        }`}
+                        title={lead.next_action_note ?? 'Próximo contato'}
+                      >
+                        <AlarmClock className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+                        <span className="truncate">
+                          {dueLabel(lead.next_action_at, now)}
+                          {lead.next_action_note && ` · ${lead.next_action_note}`}
+                        </span>
+                      </p>
+                    )}
+
                     <div className="mt-3 flex items-center gap-1 border-t border-ink-800/70 pt-2.5">
                       <LeadDetails
                         lead={lead}
                         stages={stages}
                         history={leadHistory}
+                        activities={activities.filter((item) => item.lead_id === lead.id)}
+                        team={team}
+                        role={role}
                         triggerLabel="Abrir ficha"
                         triggerClassName="mr-auto rounded-md px-1.5 py-1 text-[13px] font-semibold text-ink-300 transition hover:bg-ink-800 hover:text-ink-50"
                       />
 
-                      {lead.ctwa_clid &&
+                      {(lead.ctwa_clid || lead.meta_qualified_sent_at || lead.meta_last_error) &&
                         (lead.meta_last_error ? (
                           <span title="Meta: erro no último envio" className="p-1.5 text-rose-400">
                             <TriangleAlert className="h-4 w-4" strokeWidth={2} aria-hidden />
@@ -431,7 +466,7 @@ export function CrmPipeline({ stages, leads, history }: Props) {
                         </a>
                       )}
 
-                      {!stage.is_won && (
+                      {manager && !stage.is_won && (
                         <button
                           type="button"
                           onClick={() =>
@@ -471,6 +506,19 @@ export function CrmPipeline({ stages, leads, history }: Props) {
         {...deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onDone={handleDeleteDone}
+      />
+    )}
+
+    {pendingMove && (
+      <StageChangeDialog
+        stage={pendingMove.stage}
+        leadName={pendingMove.leadName}
+        onCancel={() => setPendingMove(null)}
+        onConfirm={(extras) => {
+          const move = pendingMove
+          setPendingMove(null)
+          void moveLead(move.leadId, move.stage.id, extras)
+        }}
       />
     )}
     </>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { requireApiContext } from '@/lib/crm-context'
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate()
@@ -13,6 +14,10 @@ function dueDateForCompetence(competence: string, dueDay: number) {
 }
 
 export async function POST(request: Request) {
+  // Só dono/administrador.
+  const guard = await requireApiContext({ managerOnly: true })
+  if (guard.error) return guard.error
+
   const supabase = await createClient()
   const { data: claimsData } = await supabase.auth.getClaims()
   const userId = claimsData?.claims?.sub
