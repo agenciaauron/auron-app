@@ -55,6 +55,25 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
 // Atividades que o SDR registra pelos botões rápidos.
 export const QUICK_ACTIVITIES: ActivityType[] = ['ligacao', 'mensagem', 'nao_atendeu', 'nota']
 
+// Etapa "Sem resposta": contam como tentativa as mensagens/ligações feitas depois da última
+// mensagem do lead. A partir do limite, o CRM sugere desqualificar com "Não respondeu".
+export const NO_REPLY_STAGE_SLUG = 'sem-resposta'
+export const NO_REPLY_ATTEMPT_LIMIT = 4
+const ATTEMPT_TYPES = new Set(['mensagem', 'ligacao', 'nao_atendeu'])
+
+export function noReplyAttempts(
+  lead: { id: string; created_at: string; last_message_at?: string | null },
+  activities: { lead_id: string; type: string; created_at: string }[]
+) {
+  const since = new Date(lead.last_message_at ?? lead.created_at).getTime()
+  return activities.filter(
+    (item) =>
+      item.lead_id === lead.id &&
+      ATTEMPT_TYPES.has(item.type) &&
+      new Date(item.created_at).getTime() > since
+  ).length
+}
+
 export const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {
   agendada: 'Agendada',
   realizada: 'Aconteceu',

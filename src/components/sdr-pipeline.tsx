@@ -25,7 +25,17 @@ import {
   templateMessages,
   whatsappUrl,
 } from '@/lib/lead-cleanup'
-import { dueLabel, dueState, formatDateTime, fromLocalInput, isManager, type TeamMember } from '@/lib/crm'
+import {
+  NO_REPLY_ATTEMPT_LIMIT,
+  NO_REPLY_STAGE_SLUG,
+  dueLabel,
+  dueState,
+  formatDateTime,
+  fromLocalInput,
+  isManager,
+  noReplyAttempts,
+  type TeamMember,
+} from '@/lib/crm'
 import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
 
 type MetaResult = {
@@ -409,6 +419,20 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                           </p>
                         )
                       )}
+
+                      {stage.slug === NO_REPLY_STAGE_SLUG && (() => {
+                        const attempts = noReplyAttempts(lead, activities)
+                        return (
+                          <p
+                            className={`mt-2 text-[12px] font-medium ${
+                              attempts >= NO_REPLY_ATTEMPT_LIMIT ? 'text-rose-300' : 'text-ink-400'
+                            }`}
+                          >
+                            {attempts} de {NO_REPLY_ATTEMPT_LIMIT} tentativas
+                            {attempts >= NO_REPLY_ATTEMPT_LIMIT && ' · desqualificar?'}
+                          </p>
+                        )
+                      })()}
 
                       {stage.is_lost && lead.lost_reason && (
                         <p className="mt-2 inline-flex rounded-md bg-rose-400/10 px-2 py-0.5 text-[11px] font-semibold text-rose-300">

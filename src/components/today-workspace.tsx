@@ -6,6 +6,9 @@ import { MessageCircle } from 'lucide-react'
 import { SdrLeadDetails } from '@/components/sdr-lead-details'
 import { displayMessage, formatPhone, isTemplateMessage, templateMessages, whatsappUrl } from '@/lib/lead-cleanup'
 import {
+  NO_REPLY_ATTEMPT_LIMIT,
+  NO_REPLY_STAGE_SLUG,
+  noReplyAttempts,
   ORIGIN_LABELS,
   dueLabel,
   dueState,
@@ -137,7 +140,23 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
       (item) => item.user_id === userId && new Date(item.created_at).getTime() >= todayStart
     ).length
 
-    return { waiting, overdue, dueToday, meetingsToday, meetingsPending, upcomingMeetings, noNextStep, myActivitiesToday }
+    // Em "Sem resposta" e já com o número máximo de tentativas: hora de desqualificar.
+    const noReplyLimit = active
+      .filter((lead) => lead.stage_id && stageMap.get(lead.stage_id)?.slug === NO_REPLY_STAGE_SLUG)
+      .map((lead) => ({ lead, attempts: noReplyAttempts(lead, activities) }))
+      .filter(({ attempts }) => attempts >= NO_REPLY_ATTEMPT_LIMIT)
+
+    return {
+      waiting,
+      overdue,
+      dueToday,
+      meetingsToday,
+      meetingsPending,
+      upcomingMeetings,
+      noNextStep,
+      noReplyLimit,
+      myActivitiesToday,
+    }
   }, [leads, stages, stageMap, activities, lastTouch, now, userId])
 
   async function setMeetingResult(leadId: string, status: 'realizada' | 'nao_compareceu') {
@@ -267,6 +286,14 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
       title: 'Follow-ups atrasados',
       hint: 'Faça o contato e marque o próximo passo.',
       items: groups.overdue.map((lead) => leadRow(lead, nextActionText(lead), 'urgent')),
+    },
+    {
+      key: 'no-reply-limit',
+      title: 'Sem resposta: limite de tentativas',
+      hint: `${NO_REPLY_ATTEMPT_LIMIT} tentativas sem retorno. Abra a ficha e desqualifique com "Não respondeu".`,
+      items: groups.noReplyLimit.map(({ lead, attempts }) =>
+        leadRow(lead, `${attempts} tentativas sem resposta`, 'attention')
+      ),
     },
     {
       key: 'today',

@@ -7,9 +7,12 @@ import { LOST_REASONS, displayMessage, formatPhone, whatsappUrl } from '@/lib/le
 import {
   ACTIVITY_LABELS,
   MEETING_STATUS_LABELS,
+  NO_REPLY_ATTEMPT_LIMIT,
+  NO_REPLY_STAGE_SLUG,
   ORIGIN_LABELS,
   QUICK_ACTIVITIES,
   formatDateTime,
+  noReplyAttempts,
   fromLocalInput,
   isManager,
   isMeetingStage,
@@ -118,6 +121,33 @@ export function SdrLeadDetails({
   const isLandingPage = (lead.source ?? '').toLowerCase().includes('landing')
   // Anúncio que chegou sem a marca do anúncio: o evento vai pelo telefone (sem garantia de atribuição).
   const isAdWithoutReferral = (lead.source ?? '').toLowerCase().includes('sem identificação')
+  const inNoReply = currentStage?.slug === NO_REPLY_STAGE_SLUG
+  const attempts = inNoReply ? noReplyAttempts(lead, activities) : 0
+  const lostStage = stages.find((stage) => stage.is_lost)
+  const [disqualifying, setDisqualifying] = useState(false)
+
+  // Atingiu o limite de tentativas em "Sem resposta": desqualifica com "Não respondeu".
+  async function disqualifyNoReply() {
+    if (!lostStage) return
+    setDisqualifying(true)
+    setError('')
+
+    const response = await fetch('/api/leads/stage', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId: lead.id, stageId: lostStage.id, strict: true, lostReason: 'Não respondeu' }),
+    })
+    const result = await response.json()
+    setDisqualifying(false)
+
+    if (!response.ok) {
+      setError(result.error || 'Não foi possível desqualificar o lead.')
+      return
+    }
+
+    close()
+    router.refresh()
+  }
   const metaEligible =
     lead.integration_source === 'whatsapp' &&
     (Boolean(lead.ctwa_clid) || isLandingPage || isAdWithoutReferral)
@@ -380,6 +410,33 @@ export function SdrLeadDetails({
                 Última mensagem{lead.last_message_at && ` · ${formatDateTime(lead.last_message_at)}`}
               </p>
               <p className="mt-1 text-sm leading-6 text-ink-200">“{displayMessage(lead.last_message)}”</p>
+            </div>
+          )}
+
+          {inNoReply && (
+            <div
+              className={`mt-4 rounded-lg px-3.5 py-3 text-sm ${
+                attempts >= NO_REPLY_ATTEMPT_LIMIT
+                  ? 'border border-rose-500/25 bg-rose-500/5 text-rose-200'
+                  : 'bg-ink-900/70 text-ink-300'
+              }`}
+            >
+              <p>
+                <span className="font-semibold">
+                  {attempts} de {NO_REPLY_ATTEMPT_LIMIT} tentativas
+                </span>{' '}
+                sem resposta desde a última mensagem do lead.
+              </p>
+              {attempts >= NO_REPLY_ATTEMPT_LIMIT && lostStage && (
+                <button
+                  type="button"
+                  onClick={disqualifyNoReply}
+                  disabled={disqualifying}
+                  className="mt-2.5 rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-60"
+                >
+                  {disqualifying ? 'Movendo...' : 'Mover para Desqualificado (Não respondeu)'}
+                </button>
+              )}
             </div>
           )}
 
