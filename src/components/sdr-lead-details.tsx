@@ -116,8 +116,11 @@ export function SdrLeadDetails({
   const sdrName = team.find((member) => member.user_id === lead.sdr_id)?.name
 
   const isLandingPage = (lead.source ?? '').toLowerCase().includes('landing')
+  // Anúncio que chegou sem a marca do anúncio: o evento vai pelo telefone (sem garantia de atribuição).
+  const isAdWithoutReferral = (lead.source ?? '').toLowerCase().includes('sem identificação')
   const metaEligible =
-    lead.integration_source === 'whatsapp' && (Boolean(lead.ctwa_clid) || isLandingPage)
+    lead.integration_source === 'whatsapp' &&
+    (Boolean(lead.ctwa_clid) || isLandingPage || isAdWithoutReferral)
 
   function close() {
     if (controlled) onClose?.()
@@ -308,7 +311,10 @@ export function SdrLeadDetails({
     ? [
         `Qualificado: ${lead.meta_qualified_sent_at ? `enviado ${formatDateTime(lead.meta_qualified_sent_at)}` : 'não enviado'}`,
         `Venda: ${lead.meta_purchase_sent_at ? `enviada ${formatDateTime(lead.meta_purchase_sent_at)}` : 'não enviada'}`,
-      ].join(' · ')
+      ].join(' · ') +
+      (isAdWithoutReferral && !lead.ctwa_clid
+        ? ' (chegou sem a marca do anúncio: o evento vai pelo telefone e a Meta tenta ligar ao anúncio)'
+        : '')
     : 'Lead sem vínculo com anúncio ou site: nenhum evento é enviado.'
 
   return (
