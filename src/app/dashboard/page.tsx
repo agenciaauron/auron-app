@@ -50,7 +50,7 @@ export default async function DashboardPage() {
         .order('position'),
       supabase
         .from('leads')
-        .select('id, stage_id, sale_value, created_at')
+        .select('id, stage_id, sale_value, created_at, origin')
         .eq('company_id', companyId),
       supabase
         .from('lead_history')

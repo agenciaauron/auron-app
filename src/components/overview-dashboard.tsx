@@ -24,6 +24,20 @@ type Lead = {
   stage_id: string | null
   sale_value: number | string | null
   created_at: string
+  origin?: string | null
+}
+
+// Tráfego (anúncio/site) e prospecção ativa do SDR são contados separados.
+type Front = 'trafego' | 'prospeccao' | 'todos'
+
+const frontOptions: Array<{ value: Front; label: string; leadsLabel: string }> = [
+  { value: 'trafego', label: 'Tráfego', leadsLabel: 'Leads recebidos' },
+  { value: 'prospeccao', label: 'Prospecção', leadsLabel: 'Leads prospectados' },
+  { value: 'todos', label: 'Tudo', leadsLabel: 'Leads (todas as frentes)' },
+]
+
+function leadFront(lead: Lead): 'trafego' | 'prospeccao' {
+  return lead.origin === 'prospeccao' ? 'prospeccao' : 'trafego'
 }
 
 type HistoryItem = {
@@ -225,9 +239,22 @@ function Comparison({ current, previous }: { current: number; previous: number }
   )
 }
 
-export function OverviewDashboard({ leads, stages, history }: Props) {
+export function OverviewDashboard({ leads: allLeads, stages, history: allHistory }: Props) {
   const now = new Date()
+  const [front, setFront] = useState<Front>('trafego')
   const [period, setPeriod] = useState<Period>('month')
+
+  // Tudo abaixo (cards e gráfico) usa só os leads da frente escolhida.
+  const leads = useMemo(
+    () => (front === 'todos' ? allLeads : allLeads.filter((lead) => leadFront(lead) === front)),
+    [allLeads, front]
+  )
+  const history = useMemo(() => {
+    if (front === 'todos') return allHistory
+    const ids = new Set(leads.map((lead) => lead.id))
+    return allHistory.filter((item) => ids.has(item.lead_id))
+  }, [allHistory, leads, front])
+  const frontInfo = frontOptions.find((item) => item.value === front) ?? frontOptions[0]
   const [metric, setMetric] = useState<Metric>('leads')
   const [customStart, setCustomStart] = useState(
     dateToInputValue(new Date(now.getFullYear(), now.getMonth(), 1))
@@ -312,7 +339,7 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
 
   const cards = [
     {
-      label: 'Leads recebidos',
+      label: frontInfo.leadsLabel,
       metric: 'leads' as const,
       value: totalInRange('leads', range.start, range.end),
       previous: totalInRange('leads', range.prevStart, range.prevEnd),
@@ -388,6 +415,25 @@ export function OverviewDashboard({ leads, stages, history }: Props) {
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="text-xs text-ink-500">
+            <span className="mb-1 block">Frente</span>
+            <div className="inline-flex rounded-lg border border-ink-800 bg-ink-900 p-1" role="group" aria-label="Frente">
+              {frontOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setFront(option.value)}
+                  aria-pressed={front === option.value}
+                  className={`rounded-md px-3.5 py-1.5 text-sm transition ${
+                    front === option.value ? 'bg-auron-600 font-medium text-white' : 'text-ink-400 hover:text-ink-200'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {period === 'custom' && (
             <>
               <label className="text-xs text-ink-500">
