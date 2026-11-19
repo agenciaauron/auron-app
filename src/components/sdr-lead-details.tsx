@@ -20,10 +20,12 @@ import {
   noReplyAttempts,
   suggestedFollowUp,
   withStageTouches,
+  fromLocalDateInput,
   fromLocalInput,
   isManager,
   isMeetingStage,
   stageBelongsTo,
+  toLocalDateInput,
   toLocalInput,
   normalizeOrigin,
   type ActivityType,
@@ -291,7 +293,7 @@ export function SdrLeadDetails({
         stageId: selectedStageId,
         strict: true,
         origin,
-        nextActionAt: fromLocalInput(form.get('nextActionAt')) ?? '',
+        nextActionAt: fromLocalDateInput(form.get('nextActionAt')) ?? '',
         nextActionNote: form.get('nextActionNote'),
         meetingAt: fromLocalInput(form.get('meetingAt')) ?? '',
         ...(manager ? { sdrId: form.get('sdrId') } : {}),
@@ -333,10 +335,10 @@ export function SdrLeadDetails({
     // Tentativa de contato: já sugere o próximo follow-up pela cadência (+1, +2, +4 dias).
     const suggestion = ATTEMPT_TYPES.has(type) ? suggestedFollowUp(noReplyAttempts(lead, touches) + 1) : null
     if (ATTEMPT_TYPES.has(type)) {
-      setActivityNext(toLocalInput(suggestion?.at ?? null))
+      setActivityNext(toLocalDateInput(suggestion?.at ?? null))
       setActivityNextNote(suggestion?.note ?? '')
     } else {
-      setActivityNext(toLocalInput(lead.next_action_at))
+      setActivityNext(toLocalDateInput(lead.next_action_at))
       setActivityNextNote(lead.next_action_note ?? '')
     }
     setActivityError('')
@@ -356,7 +358,7 @@ export function SdrLeadDetails({
         leadId: lead.id,
         type: activityType,
         note: activityNote,
-        nextActionAt: fromLocalInput(activityNext) ?? '',
+        nextActionAt: fromLocalDateInput(activityNext) ?? '',
         nextActionNote: activityNextNote,
       }),
     })
@@ -629,7 +631,7 @@ export function SdrLeadDetails({
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Próximo contato">
                   <input
-                    type="datetime-local"
+                    type="date"
                     value={activityNext}
                     onChange={(event) => setActivityNext(event.target.value)}
                     className={inputClass}
@@ -672,8 +674,8 @@ export function SdrLeadDetails({
                 <Field label="Quando">
                   <input
                     name="nextActionAt"
-                    type="datetime-local"
-                    defaultValue={toLocalInput(lead.next_action_at)}
+                    type="date"
+                    defaultValue={toLocalDateInput(lead.next_action_at)}
                     className={inputClass}
                   />
                 </Field>

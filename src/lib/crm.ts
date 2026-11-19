@@ -331,6 +331,29 @@ export function fromLocalInput(value: FormDataEntryValue | string | null | undef
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
+// Follow-up só tem data (pedido do Rafael, 19/11): o input é <input type="date">.
+export function toLocalDateInput(value: string | null | undefined) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+// "2026-11-20" -> ISO às 9h do dia, no fuso de quem está usando (roda no navegador).
+export function fromLocalDateInput(value: FormDataEntryValue | string | null | undefined) {
+  const text = String(value ?? '').trim()
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+  if (!match) return null
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 9, 0, 0)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+export function formatDate(value: string | null | undefined) {
+  if (!value) return ''
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(value))
+}
+
 export type DueState = 'overdue' | 'today' | 'future'
 
 export function dueState(value: string, now = Date.now()): DueState {
@@ -340,28 +363,27 @@ export function dueState(value: string, now = Date.now()): DueState {
   const endOfToday = new Date(startOfToday)
   endOfToday.setDate(endOfToday.getDate() + 1)
 
-  if (date.getTime() < now && date < startOfToday) return 'overdue'
-  if (date < endOfToday) return date.getTime() < now ? 'overdue' : 'today'
+  // Só a data conta: follow-up de hoje é "hoje" o dia todo, atrasado só a partir de amanhã.
+  if (date < startOfToday) return 'overdue'
+  if (date < endOfToday) return 'today'
   return 'future'
 }
 
 export function dueLabel(value: string, now = Date.now()) {
   const date = new Date(value)
   const state = dueState(value, now)
-  const time = new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(date)
 
-  if (state === 'today') return `Hoje, ${time}`
+  if (state === 'today') return 'Hoje'
 
   const startOfToday = new Date(now)
   startOfToday.setHours(0, 0, 0, 0)
   const days = Math.round((startOfToday.getTime() - new Date(date).setHours(0, 0, 0, 0)) / 86400000)
 
   if (state === 'overdue') {
-    if (days <= 0) return `Atrasado desde ${time}`
-    if (days === 1) return `Atrasado desde ontem`
+    if (days <= 1) return `Atrasado desde ontem`
     return `Atrasado há ${days} dias`
   }
 
-  if (days === -1) return `Amanhã, ${time}`
-  return formatDateTime(value)
+  if (days === -1) return 'Amanhã'
+  return formatDate(value)
 }

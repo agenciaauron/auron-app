@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { fromLocalInput } from '@/lib/crm'
+import { fromLocalDateInput } from '@/lib/crm'
 
 const fieldClass =
   'w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500'
@@ -35,7 +35,7 @@ export function SdrNewLeadForm() {
         source: form.get('source'),
         campaign: form.get('campaign'),
         origin: form.get('origin'),
-        nextActionAt: fromLocalInput(form.get('nextActionAt')),
+        nextActionAt: fromLocalDateInput(form.get('nextActionAt')),
         nextActionNote: form.get('nextActionNote'),
         // Segunda tentativa depois do aviso de telefone repetido.
         force: duplicate,
@@ -118,7 +118,7 @@ export function SdrNewLeadForm() {
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <input
                 name="nextActionAt"
-                type="datetime-local"
+                type="date"
                 className={`${fieldClass} text-sm [color-scheme:dark]`}
               />
               <input name="nextActionNote" placeholder="O que fazer" className={`${fieldClass} text-sm`} />
