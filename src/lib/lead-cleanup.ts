@@ -103,6 +103,7 @@ export function isTemplateMessage(message: string | null | undefined, templates:
 export function whatsappUrl(raw: string | null | undefined, text?: string) {
   const digits = (raw ?? '').replace(/\D/g, '')
   if (digits.length < 10) return null
-  const url = `https://wa.me/${digits.startsWith('55') ? digits : `55${digits}`}`
-  return text ? `${url}?text=${encodeURIComponent(text)}` : url
+  // Abre direto o WhatsApp Web na conversa (wa.me tentava abrir o app do computador).
+  const url = `https://web.whatsapp.com/send?phone=${digits.startsWith('55') ? digits : `55${digits}`}`
+  return text ? `${url}&text=${encodeURIComponent(text)}` : url
 }
