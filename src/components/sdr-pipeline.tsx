@@ -12,6 +12,7 @@ import {
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
+import { ConversationPicker } from '@/components/conversation-picker'
 import { LeadDeleteDialog } from '@/components/lead-delete-dialog'
 import { SdrLeadDetails } from '@/components/sdr-lead-details'
 import { StageChangeDialog, stageNeedsInput, type StageExtras } from '@/components/stage-change-dialog'
@@ -98,6 +99,7 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
     () => new Set(stages.filter((stage) => stage.is_lost || stage.slug === QUALIFIED_STAGE_SLUG).map((stage) => stage.id))
   )
   const [openLeadId, setOpenLeadId] = useState<string | null>(null)
+  const [statusMenuId, setStatusMenuId] = useState<string | null>(null)
   const [now] = useState(() => Date.now())
 
   // Dados novos do servidor (após router.refresh) substituem a cópia local.
@@ -278,6 +280,35 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
       alert(error instanceof Error && error.message ? error.message : 'Não foi possível registrar.')
     } finally {
       setSavingLeadId(null)
+    }
+  }
+
+  // SDR corrige o selo (vale até a conversa andar). null = volta ao automático.
+  async function setConversation(leadId: string, kind: ConversationKind | null) {
+    const previous = localLeads.find((item) => item.id === leadId)
+    if (!previous) return
+    const at = new Date().toISOString()
+    setStatusMenuId(null)
+    setLocalLeads((current) =>
+      current.map((item) =>
+        item.id === leadId ? { ...item, conversation_override: kind, conversation_override_at: kind ? at : null } : item
+      )
+    )
+
+    try {
+      const response = await fetch('/api/leads/conversation', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, kind }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Não foi possível salvar.')
+      startTransition(() => {
+        router.refresh()
+      })
+    } catch (error) {
+      setLocalLeads((current) => current.map((item) => (item.id === leadId ? previous : item)))
+      alert(error instanceof Error && error.message ? error.message : 'Não foi possível salvar.')
     }
   }
 
@@ -493,10 +524,31 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                       )}
 
                       {status && badge && (
-                        <p className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold ${badge.chip}`}>
+                        <button
+                          type="button"
+                          draggable={false}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setStatusMenuId((current) => (current === lead.id ? null : lead.id))
+                          }}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          title="Clique para corrigir o selo"
+                          className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold transition hover:brightness-125 ${badge.chip}`}
+                        >
                           <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} aria-hidden />
                           {status.text}
-                        </p>
+                          {status.manual && <span className="font-normal opacity-70">· marcado</span>}
+                        </button>
+                      )}
+
+                      {status && statusMenuId === lead.id && (
+                        <div className="mt-2" onClick={(event) => event.stopPropagation()}>
+                          <ConversationPicker
+                            current={status.manual ? status.kind : null}
+                            manual={Boolean(status.manual)}
+                            onPick={(kind) => void setConversation(lead.id, kind)}
+                          />
+                        </div>
                       )}
 
                       {stage.is_lost && lead.lost_reason && (

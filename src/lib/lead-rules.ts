@@ -83,8 +83,12 @@ export function stageChangeFields({
     fields.won_at = null
   }
 
-  // A cor do "Sem resposta" só vale enquanto o lead está lá.
-  if (stageChanged) fields.no_reply_tag = null
+  // Correção manual do selo só vale na etapa em que foi feita.
+  if (stageChanged) {
+    fields.no_reply_tag = null
+    fields.conversation_override = null
+    fields.conversation_override_at = null
+  }
 
   // O SDR que trabalha o lead fica como responsável (é ele quem recebe a comissão).
   if (role === 'sdr' && !lead.sdr_id) {

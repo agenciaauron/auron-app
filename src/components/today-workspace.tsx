@@ -7,6 +7,7 @@ import { MeetingDialog, type MeetingDialogMode } from '@/components/meeting-dial
 import { SdrLeadDetails } from '@/components/sdr-lead-details'
 import { displayMessage, formatPhone, isTemplateMessage, templateMessages, whatsappUrl } from '@/lib/lead-cleanup'
 import {
+  NO_REPLY_ATTEMPT_LIMIT,
   NO_SHOW_LIMIT,
   ORIGIN_LABELS,
   conversationStatus,
@@ -182,8 +183,15 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
       (item) => item.user_id === userId && new Date(item.created_at).getTime() >= todayStart
     ).length
 
+    // Chegaram ao limite de tentativas sem resposta: a equipe decide se desqualifica.
+    const atLimit = active.filter((lead) => {
+      const item = status.get(lead.id)
+      return item && item.kind !== 'sua_vez' && item.attempts >= NO_REPLY_ATTEMPT_LIMIT
+    })
+
     return {
       status,
+      atLimit,
       missReason,
       waiting,
       overdue,
@@ -436,6 +444,25 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
           </button>
         )
       }),
+    },
+    {
+      key: 'at-limit',
+      title: `${NO_REPLY_ATTEMPT_LIMIT} tentativas sem resposta`,
+      hint: 'Nada sai do funil sozinho: decida se desqualifica (Não respondeu) ou se tenta de novo.',
+      items: groups.atLimit.map((lead) =>
+        leadRow(
+          lead,
+          groups.status.get(lead.id)?.text ?? 'Sem resposta',
+          'attention',
+          <button
+            type="button"
+            onClick={() => setOpenLeadId(lead.id)}
+            className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-medium text-rose-200 transition hover:bg-rose-500/10"
+          >
+            Decidir
+          </button>
+        )
+      ),
     },
     {
       key: 'meetings-tomorrow',

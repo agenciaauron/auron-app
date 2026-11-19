@@ -3,6 +3,7 @@
 import { FormEvent, ReactNode, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, MessageCircle, X } from 'lucide-react'
+import { ConversationPicker } from '@/components/conversation-picker'
 import { MeetingDialog, type MeetingDialogMode } from '@/components/meeting-dialog'
 import { LOST_REASONS, displayMessage, formatPhone, whatsappUrl } from '@/lib/lead-cleanup'
 import {
@@ -26,6 +27,7 @@ import {
   toLocalInput,
   normalizeOrigin,
   type ActivityType,
+  type ConversationKind,
   type MeetingStatus,
   type TeamMember,
 } from '@/lib/crm'
@@ -135,6 +137,7 @@ export function SdrLeadDetails({
   const [disqualifying, setDisqualifying] = useState(false)
   const [meetingDialog, setMeetingDialog] = useState<MeetingDialogMode | null>(null)
   const [meetingSaving, setMeetingSaving] = useState(false)
+  const [conversationSaving, setConversationSaving] = useState(false)
   const missed = lead.meeting_status === 'nao_compareceu' || lead.meeting_status === 'desmarcada'
   const lastMissReason = [...activities]
     .filter((item) => (item.type === 'nao_compareceu' || item.type === 'reuniao_desmarcada') && item.note)
@@ -160,6 +163,24 @@ export function SdrLeadDetails({
     }
 
     close()
+    router.refresh()
+  }
+
+  // SDR corrige o selo (vale até a conversa andar). null = volta ao automático.
+  async function setConversation(kind: ConversationKind | null) {
+    setConversationSaving(true)
+    setError('')
+    const response = await fetch('/api/leads/conversation', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId: lead.id, kind }),
+    })
+    const result = await response.json()
+    setConversationSaving(false)
+    if (!response.ok) {
+      setError(result.error || 'Não foi possível salvar.')
+      return
+    }
     router.refresh()
   }
 
@@ -453,17 +474,39 @@ export function SdrLeadDetails({
             </div>
           )}
 
-          {status && badge && status.kind !== 'faltou_reuniao' && (
-            <div className="mt-4 flex items-start gap-2.5 rounded-lg bg-ink-900/70 px-3.5 py-3 text-sm text-ink-300">
-              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${badge.dot}`} aria-hidden />
-              <p>
-                <span className="font-semibold text-ink-100">{status.text}</span>
-                {status.kind === 'sua_vez'
-                  ? '. Responda e registre "Mandou mensagem".'
-                  : status.attempts >= NO_REPLY_ATTEMPT_LIMIT
-                    ? '. Sem resposta em 2 dias, ele vai sozinho para Desqualificado (Não respondeu). Se responder, volta.'
-                    : ''}
-              </p>
+          {status && badge && (
+            <div className="mt-4 rounded-lg bg-ink-900/70 px-3.5 py-3 text-sm text-ink-300">
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${badge.dot}`} aria-hidden />
+                <p>
+                  <span className="font-semibold text-ink-100">{status.text}</span>
+                  {status.manual
+                    ? ' (marcado por você; volta ao automático quando a conversa andar).'
+                    : status.kind === 'sua_vez'
+                      ? '. Já respondeu? Corrija o selo abaixo.'
+                      : status.attempts >= NO_REPLY_ATTEMPT_LIMIT
+                        ? '. Chegou ao limite de tentativas: se fizer sentido, desqualifique.'
+                        : ''}
+                </p>
+              </div>
+              <div className="mt-2.5">
+                <ConversationPicker
+                  current={status.manual ? status.kind : null}
+                  manual={Boolean(status.manual)}
+                  disabled={conversationSaving}
+                  onPick={(kind) => void setConversation(kind)}
+                />
+              </div>
+              {status.attempts >= NO_REPLY_ATTEMPT_LIMIT && status.kind !== 'sua_vez' && lostStage && (
+                <button
+                  type="button"
+                  onClick={() => disqualify('Não respondeu')}
+                  disabled={disqualifying}
+                  className="mt-2.5 rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-60"
+                >
+                  {disqualifying ? 'Movendo...' : 'Mover para Desqualificado (Não respondeu)'}
+                </button>
+              )}
             </div>
           )}
 

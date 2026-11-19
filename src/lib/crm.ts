@@ -66,11 +66,12 @@ export const CONVERSATION_STAGE_SLUG = 'em-contato'
 export const ENTRY_STAGE_SLUG = 'novo-lead'
 export const QUALIFIED_STAGE_SLUG = 'qualificado'
 
-// Depois de 5 tentativas sem resposta (e 2 dias de silêncio), o banco desqualifica sozinho
-// às 9h com "Não respondeu". Se o lead responder depois, o webhook devolve para "Em conversa".
+// Depois de 5 tentativas sem resposta, o CRM SUGERE desqualificar (aba Hoje e ficha).
+// Nada vai para Desqualificado sozinho: quem decide é a equipe (pedido do Rafael, 19/11).
+// Se um lead desqualificado por "Não respondeu" voltar a falar, o webhook devolve para "Em conversa".
 export const NO_REPLY_ATTEMPT_LIMIT = 5
 // A contagem de tentativas começou do zero aqui (19/11/2026, 15h30 de Brasília).
-// O mesmo valor está no webhook e na função do banco private.desistir_sem_resposta.
+// O mesmo valor está no webhook (api/webhook.js do auron-conversoes).
 export const ATTEMPTS_COUNTED_FROM = '2026-11-19T18:30:00.000Z'
 // Quem faltou ou desmarcou 2 vezes: o CRM sugere desqualificar.
 export const NO_SHOW_LIMIT = 2
@@ -183,16 +184,54 @@ export type ConversationStatus = {
   text: string
   attempts: number
   noShows: number
+  // Marcado pelo SDR (corrigiu o automático).
+  manual?: boolean
+}
+
+// Ordem das opções quando o SDR corrige o selo.
+export const CONVERSATION_KINDS: ConversationKind[] = [
+  'sua_vez',
+  'aguardando',
+  'nunca_respondeu',
+  'parou_de_responder',
+  'faltou_reuniao',
+]
+
+// O lead não escreveu nada depois das primeiras mensagens (as do anúncio, no mesmo instante).
+const FIRST_MESSAGES_WINDOW_MS = 10 * 60000
+
+type StatusLead = LeadTimes & {
+  meeting_status?: string | null
+  conversation_override?: string | null
+  conversation_override_at?: string | null
 }
 
 // De quem é a vez na conversa, calculado pelas mensagens do lead e pelas tentativas registradas.
+// O SDR pode corrigir: a correção vale até a conversa andar (nova mensagem do lead ou nova tentativa).
 export function conversationStatus(
-  lead: LeadTimes & { meeting_status?: string | null },
+  lead: StatusLead,
   activities: ActivityTimes[],
   now = Date.now()
 ): ConversationStatus | null {
   const own = activities.filter((item) => item.lead_id === lead.id)
   const noShows = own.filter((item) => item.type === 'nao_compareceu' || item.type === 'reuniao_desmarcada').length
+  const attemptTimes = own
+    .filter((item) => ATTEMPT_TYPES.has(item.type))
+    .map((item) => new Date(item.created_at).getTime())
+  const inbound = lead.last_message_at ? new Date(lead.last_message_at).getTime() : null
+  const lastAttempt = attemptTimes.length ? Math.max(...attemptTimes) : null
+  const attempts = noReplyAttempts(lead, activities)
+  const count = attempts > 0 ? ` · ${attempts} de ${NO_REPLY_ATTEMPT_LIMIT}` : ''
+
+  const override = lead.conversation_override as ConversationKind | null | undefined
+  if (override && lead.conversation_override_at && CONVERSATION_BADGES[override]) {
+    const markedAt = new Date(lead.conversation_override_at).getTime()
+    const lastEvent = Math.max(inbound ?? 0, lastAttempt ?? 0)
+    if (markedAt >= lastEvent) {
+      const waiting = override !== 'sua_vez' && override !== 'faltou_reuniao'
+      return { kind: override, text: `${CONVERSATION_BADGES[override].label}${waiting ? count : ''}`, attempts, noShows, manual: true }
+    }
+  }
 
   if (lead.meeting_status === 'nao_compareceu' || lead.meeting_status === 'desmarcada') {
     const what = lead.meeting_status === 'desmarcada' ? 'Desmarcou a reunião' : 'Faltou na reunião'
@@ -206,30 +245,21 @@ export function conversationStatus(
 
   if (lead.meeting_status === 'agendada') return null
 
-  const attemptTimes = own
-    .filter((item) => ATTEMPT_TYPES.has(item.type))
-    .map((item) => new Date(item.created_at).getTime())
-  const inbound = lead.last_message_at ? new Date(lead.last_message_at).getTime() : null
-
-  if (attemptTimes.length === 0) {
+  if (lastAttempt === null) {
     return inbound ? { kind: 'sua_vez', text: 'Mandou mensagem · sua vez', attempts: 0, noShows } : null
   }
-
-  const lastAttempt = Math.max(...attemptTimes)
-  const firstAttempt = Math.min(...attemptTimes)
 
   if (inbound && inbound > lastAttempt) {
     return { kind: 'sua_vez', text: 'Respondeu · sua vez', attempts: 0, noShows }
   }
 
-  const attempts = noReplyAttempts(lead, activities)
-  const count = attempts > 0 ? ` · ${attempts} de ${NO_REPLY_ATTEMPT_LIMIT}` : ''
-
   if (now - lastAttempt < STALE_MS) {
     return { kind: 'aguardando', text: `Aguardando resposta${count}`, attempts, noShows }
   }
 
-  const replied = inbound !== null && inbound > firstAttempt
+  // Respondeu alguma vez = escreveu depois das primeiras mensagens (dado do WhatsApp, não depende
+  // de ninguém ter registrado nada no CRM).
+  const replied = inbound !== null && inbound - new Date(lead.created_at).getTime() > FIRST_MESSAGES_WINDOW_MS
   return replied
     ? { kind: 'parou_de_responder', text: `Parou de responder${count}`, attempts, noShows }
     : { kind: 'nunca_respondeu', text: `Nunca respondeu${count}`, attempts, noShows }
