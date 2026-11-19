@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { requireApiContext } from '@/lib/crm-context'
-import { fromLocalInput } from '@/lib/crm'
+import { MEETING_MISS_REASONS, fromLocalInput } from '@/lib/crm'
 
-type Action = 'realizada' | 'nao_compareceu' | 'confirmar' | 'remarcar'
+type Action = 'realizada' | 'nao_compareceu' | 'desmarcada' | 'confirmar' | 'remarcar'
 
-// Reunião do lead: { leadId, status }.
+// Reunião do lead: { leadId, status, reason?, meetingAt? }.
 //   realizada       -> aconteceu
-//   nao_compareceu  -> faltou: fica em Reunião com selo amarelo e follow-up "remarcar" para agora
+//   nao_compareceu  -> faltou (motivo obrigatório)
+//   desmarcada      -> o lead desmarcou (motivo obrigatório)
+//     Nos dois casos, com meetingAt já fica reagendada; sem, fica em Reunião com selo
+//     amarelo e um follow-up "Reagendar a reunião" para agora.
 //   confirmar       -> registra que a reunião foi confirmada com o lead
 //   remarcar        -> nova data ({ meetingAt }) e volta a ficar agendada
 export async function PATCH(request: Request) {
@@ -15,40 +18,52 @@ export async function PATCH(request: Request) {
   if (contextError) return contextError
 
   const { supabase, userId, companyId } = context
-  const { leadId, status, meetingAt } = (await request.json()) as {
+  const { leadId, status, meetingAt, reason } = (await request.json()) as {
     leadId?: string
     status?: Action
     meetingAt?: string
+    reason?: string
   }
 
-  if (!leadId || !status || !['realizada', 'nao_compareceu', 'confirmar', 'remarcar'].includes(status)) {
+  if (!leadId || !status || !['realizada', 'nao_compareceu', 'desmarcada', 'confirmar', 'remarcar'].includes(status)) {
     return NextResponse.json({ error: 'Resultado inválido' }, { status: 400 })
   }
 
-  const now = new Date().toISOString()
-  let update: Record<string, unknown> = { updated_at: now }
-  let activity: string
+  const missed = status === 'nao_compareceu' || status === 'desmarcada'
+  const cleanReason = String(reason ?? '').trim()
+  if (missed && !MEETING_MISS_REASONS.includes(cleanReason as (typeof MEETING_MISS_REASONS)[number])) {
+    return NextResponse.json({ error: 'Escolha o motivo.' }, { status: 400 })
+  }
 
-  if (status === 'remarcar') {
-    const nextMeeting = fromLocalInput(meetingAt)
-    if (!nextMeeting) {
-      return NextResponse.json({ error: 'Informe a nova data e hora da reunião.' }, { status: 400 })
-    }
-    update = { ...update, meeting_at: nextMeeting, meeting_status: 'agendada', next_action_at: null, next_action_note: null }
-    activity = 'reuniao_remarcada'
+  const nextMeeting = fromLocalInput(meetingAt)
+  if (status === 'remarcar' && !nextMeeting) {
+    return NextResponse.json({ error: 'Informe a nova data e hora da reunião.' }, { status: 400 })
+  }
+
+  const now = new Date().toISOString()
+  const activities: { type: string; note: string | null }[] = []
+  let update: Record<string, unknown> = { updated_at: now }
+
+  if (status === 'realizada') {
+    update.meeting_status = 'realizada'
+    activities.push({ type: 'reuniao_realizada', note: null })
   } else if (status === 'confirmar') {
-    activity = 'reuniao_confirmada'
-  } else if (status === 'nao_compareceu') {
-    update = {
-      ...update,
-      meeting_status: 'nao_compareceu',
-      next_action_at: now,
-      next_action_note: 'Remarcar a reunião (faltou)',
-    }
-    activity = 'nao_compareceu'
+    activities.push({ type: 'reuniao_confirmada', note: null })
   } else {
-    update = { ...update, meeting_status: 'realizada' }
-    activity = 'reuniao_realizada'
+    if (missed) {
+      activities.push({ type: status === 'desmarcada' ? 'reuniao_desmarcada' : 'nao_compareceu', note: cleanReason })
+    }
+    if (nextMeeting) {
+      update = { ...update, meeting_at: nextMeeting, meeting_status: 'agendada', next_action_at: null, next_action_note: null }
+      activities.push({ type: 'reuniao_remarcada', note: null })
+    } else {
+      update = {
+        ...update,
+        meeting_status: status,
+        next_action_at: now,
+        next_action_note: 'Reagendar a reunião',
+      }
+    }
   }
 
   const { data, error } = await supabase
@@ -67,13 +82,15 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Esse lead não tem reunião marcada.' }, { status: 404 })
   }
 
-  await supabase.from('lead_activities').insert({
-    company_id: companyId,
-    lead_id: leadId,
-    user_id: userId,
-    type: activity,
-    note: null,
-  })
+  await supabase.from('lead_activities').insert(
+    activities.map((item) => ({
+      company_id: companyId,
+      lead_id: leadId,
+      user_id: userId,
+      type: item.type,
+      note: item.note,
+    }))
+  )
 
   revalidatePath('/comercial')
 

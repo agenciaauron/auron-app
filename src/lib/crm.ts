@@ -3,7 +3,7 @@
 export type CrmRole = 'owner' | 'admin' | 'member' | 'sdr'
 export type LeadOrigin = 'trafego' | 'prospeccao'
 export type StagePipeline = 'trafego' | 'prospeccao' | 'ambos'
-export type MeetingStatus = 'agendada' | 'realizada' | 'nao_compareceu'
+export type MeetingStatus = 'agendada' | 'realizada' | 'nao_compareceu' | 'desmarcada'
 export type ActivityType =
   | 'ligacao'
   | 'mensagem'
@@ -14,6 +14,7 @@ export type ActivityType =
   | 'nota'
   | 'reuniao_confirmada'
   | 'reuniao_remarcada'
+  | 'reuniao_desmarcada'
 
 export type TeamMember = {
   user_id: string
@@ -54,6 +55,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   nota: 'Anotação',
   reuniao_confirmada: 'Confirmou a reunião',
   reuniao_remarcada: 'Remarcou a reunião',
+  reuniao_desmarcada: 'Desmarcou a reunião',
 }
 
 // Atividades que o SDR registra pelos botões rápidos.
@@ -64,24 +66,33 @@ export const CONVERSATION_STAGE_SLUG = 'em-contato'
 export const ENTRY_STAGE_SLUG = 'novo-lead'
 export const QUALIFIED_STAGE_SLUG = 'qualificado'
 
-// Depois de 4 tentativas sem resposta (e 2 dias de silêncio), o banco desqualifica sozinho
+// Depois de 5 tentativas sem resposta (e 2 dias de silêncio), o banco desqualifica sozinho
 // às 9h com "Não respondeu". Se o lead responder depois, o webhook devolve para "Em conversa".
-export const NO_REPLY_ATTEMPT_LIMIT = 4
-// Quem faltou 2 vezes na reunião: o CRM sugere desqualificar.
+export const NO_REPLY_ATTEMPT_LIMIT = 5
+// A contagem de tentativas começou do zero aqui (19/11/2026, 15h30 de Brasília).
+// O mesmo valor está no webhook e na função do banco private.desistir_sem_resposta.
+export const ATTEMPTS_COUNTED_FROM = '2026-11-19T18:30:00.000Z'
+// Quem faltou ou desmarcou 2 vezes: o CRM sugere desqualificar.
 export const NO_SHOW_LIMIT = 2
 // Sem resposta há mais que isso: o selo fica vermelho (nunca respondeu) ou laranja (parou).
 const STALE_MS = 24 * 3600000
-// Cadência do follow-up: depois da 1ª tentativa, +1 dia; da 2ª, +2 dias; da 3ª, +4 dias.
-const FOLLOW_UP_DAYS = [1, 2, 4]
+// Cadência do follow-up: depois da 1ª tentativa, +1 dia; da 2ª, +2; da 3ª, +4; da 4ª, +7.
+const FOLLOW_UP_DAYS = [1, 2, 4, 7]
+
+export const FOLLOW_UP_NOTE = 'Cobrar se não responder'
 
 export const ATTEMPT_TYPES = new Set(['mensagem', 'ligacao', 'nao_atendeu'])
 
 type LeadTimes = { id: string; created_at: string; last_message_at?: string | null }
 type ActivityTimes = { lead_id: string; type: string; created_at: string }
 
-// Tentativas (mensagem/ligação/não atendeu) depois da última mensagem do lead.
+// Tentativas (mensagem/ligação/não atendeu) depois da última mensagem do lead
+// (e depois do início da contagem).
 export function noReplyAttempts(lead: LeadTimes, activities: ActivityTimes[]) {
-  const since = new Date(lead.last_message_at ?? lead.created_at).getTime()
+  const since = Math.max(
+    new Date(lead.last_message_at ?? lead.created_at).getTime(),
+    new Date(ATTEMPTS_COUNTED_FROM).getTime()
+  )
   return activities.filter(
     (item) =>
       item.lead_id === lead.id &&
@@ -118,7 +129,7 @@ export function suggestedFollowUp(attempt: number, now = Date.now()) {
   if (!days) return null
   return {
     at: new Date(now + days * 86400000).toISOString(),
-    note: `Follow-up ${attempt + 1} de ${NO_REPLY_ATTEMPT_LIMIT}`,
+    note: FOLLOW_UP_NOTE,
   }
 }
 
@@ -181,12 +192,13 @@ export function conversationStatus(
   now = Date.now()
 ): ConversationStatus | null {
   const own = activities.filter((item) => item.lead_id === lead.id)
-  const noShows = own.filter((item) => item.type === 'nao_compareceu').length
+  const noShows = own.filter((item) => item.type === 'nao_compareceu' || item.type === 'reuniao_desmarcada').length
 
-  if (lead.meeting_status === 'nao_compareceu') {
+  if (lead.meeting_status === 'nao_compareceu' || lead.meeting_status === 'desmarcada') {
+    const what = lead.meeting_status === 'desmarcada' ? 'Desmarcou a reunião' : 'Faltou na reunião'
     return {
       kind: 'faltou_reuniao',
-      text: noShows >= NO_SHOW_LIMIT ? `Faltou ${noShows}x · desqualificar?` : 'Faltou na reunião · remarcar',
+      text: noShows >= NO_SHOW_LIMIT ? `${what} (${noShows}x) · desqualificar?` : `${what} · reagendar`,
       attempts: 0,
       noShows,
     }
@@ -211,23 +223,34 @@ export function conversationStatus(
   }
 
   const attempts = noReplyAttempts(lead, activities)
-  const count = `${attempts} de ${NO_REPLY_ATTEMPT_LIMIT}`
+  const count = attempts > 0 ? ` · ${attempts} de ${NO_REPLY_ATTEMPT_LIMIT}` : ''
 
   if (now - lastAttempt < STALE_MS) {
-    return { kind: 'aguardando', text: `Aguardando resposta · ${count}`, attempts, noShows }
+    return { kind: 'aguardando', text: `Aguardando resposta${count}`, attempts, noShows }
   }
 
   const replied = inbound !== null && inbound > firstAttempt
   return replied
-    ? { kind: 'parou_de_responder', text: `Parou de responder · ${count}`, attempts, noShows }
-    : { kind: 'nunca_respondeu', text: `Nunca respondeu · ${count}`, attempts, noShows }
+    ? { kind: 'parou_de_responder', text: `Parou de responder${count}`, attempts, noShows }
+    : { kind: 'nunca_respondeu', text: `Nunca respondeu${count}`, attempts, noShows }
 }
 
 export const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {
   agendada: 'Agendada',
   realizada: 'Aconteceu',
   nao_compareceu: 'Não compareceu',
+  desmarcada: 'Desmarcada',
 }
+
+// Motivo de quem faltou ou desmarcou a reunião.
+export const MEETING_MISS_REASONS = [
+  'Não apareceu e não avisou',
+  'Esqueceu',
+  'Imprevisto / compromisso',
+  'Pediu para remarcar',
+  'Problema de internet / técnico',
+  'Outro',
+] as const
 
 export function isMeetingStage(stage: { slug?: string | null; name?: string | null } | null | undefined) {
   if (!stage) return false

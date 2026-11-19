@@ -5,6 +5,7 @@ export const LOST_REASONS = [
   'Só curiosidade',
   'Fechou com outro',
   'Faltou na reunião',
+  'Desmarcou e desistiu',
   'Outro',
 ] as const
 

@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { requireApiContext } from '@/lib/crm-context'
 import {
   ACTIVITY_LABELS,
+  ATTEMPTS_COUNTED_FROM,
   ATTEMPT_TYPES,
   CONVERSATION_STAGE_SLUG,
   ENTRY_STAGE_SLUG,
@@ -13,7 +14,7 @@ import {
 
 // Registra uma atividade no lead ({ leadId, type, note, nextActionAt?, nextActionNote? }).
 // Tentativa de contato (mensagem/ligação/não atendeu):
-//   * sem nextActionAt, o próximo follow-up é agendado sozinho pela cadência (+1, +2, +4 dias);
+//   * sem nextActionAt, o próximo follow-up é agendado sozinho pela cadência (+1, +2, +4, +7 dias);
 //   * lead em "Novo lead" vai sozinho para "Em conversa".
 export async function POST(request: Request) {
   const { context, error: contextError } = await requireApiContext()
@@ -64,7 +65,8 @@ export async function POST(request: Request) {
   } else if (isAttempt && lead.meeting_status !== 'agendada') {
     // Com reunião agendada a mensagem é combinado/confirmação: não agenda follow-up.
     // Conta as tentativas desde a última mensagem do lead (já com a que acabou de entrar).
-    const since = lead.last_message_at ?? lead.created_at
+    const lastInbound = lead.last_message_at ?? lead.created_at
+    const since = new Date(lastInbound) > new Date(ATTEMPTS_COUNTED_FROM) ? lastInbound : ATTEMPTS_COUNTED_FROM
     const { count } = await supabase
       .from('lead_activities')
       .select('id', { count: 'exact', head: true })

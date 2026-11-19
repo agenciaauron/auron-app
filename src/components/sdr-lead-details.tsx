@@ -3,6 +3,7 @@
 import { FormEvent, ReactNode, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, MessageCircle, X } from 'lucide-react'
+import { MeetingDialog, type MeetingDialogMode } from '@/components/meeting-dialog'
 import { LOST_REASONS, displayMessage, formatPhone, whatsappUrl } from '@/lib/lead-cleanup'
 import {
   ACTIVITY_LABELS,
@@ -132,8 +133,12 @@ export function SdrLeadDetails({
   const badge = status ? CONVERSATION_BADGES[status.kind] : null
   const lostStage = stages.find((stage) => stage.is_lost && !stage.archived)
   const [disqualifying, setDisqualifying] = useState(false)
-  const [rescheduleAt, setRescheduleAt] = useState('')
-  const [rescheduling, setRescheduling] = useState(false)
+  const [meetingDialog, setMeetingDialog] = useState<MeetingDialogMode | null>(null)
+  const [meetingSaving, setMeetingSaving] = useState(false)
+  const missed = lead.meeting_status === 'nao_compareceu' || lead.meeting_status === 'desmarcada'
+  const lastMissReason = [...activities]
+    .filter((item) => (item.type === 'nao_compareceu' || item.type === 'reuniao_desmarcada') && item.note)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]?.note
 
   // Desistência direto da ficha (ex.: faltou na reunião e não quer remarcar).
   async function disqualify(reason: string) {
@@ -158,32 +163,24 @@ export function SdrLeadDetails({
     router.refresh()
   }
 
-  // Faltou na reunião: escolhe a nova data e a reunião volta a ficar agendada.
-  async function reschedule() {
-    const meetingAt = fromLocalInput(rescheduleAt)
-    if (!meetingAt) {
-      setError('Escolha a nova data e hora da reunião.')
-      return
-    }
-    setRescheduling(true)
+  // Reunião aconteceu (direto da ficha).
+  async function meetingHappened() {
+    setMeetingSaving(true)
     setError('')
-
     const response = await fetch('/api/leads/meeting', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leadId: lead.id, status: 'remarcar', meetingAt }),
+      body: JSON.stringify({ leadId: lead.id, status: 'realizada' }),
     })
     const result = await response.json()
-    setRescheduling(false)
-
+    setMeetingSaving(false)
     if (!response.ok) {
-      setError(result.error || 'Não foi possível remarcar.')
+      setError(result.error || 'Não foi possível salvar.')
       return
     }
-
-    close()
     router.refresh()
   }
+
   const metaEligible =
     lead.integration_source === 'whatsapp' &&
     (Boolean(lead.ctwa_clid) || isLandingPage || isAdWithoutReferral)
@@ -470,36 +467,71 @@ export function SdrLeadDetails({
             </div>
           )}
 
-          {status?.kind === 'faltou_reuniao' && (
+          {active && lead.meeting_at && lead.meeting_status === 'agendada' && (
+            <div className="mt-4 rounded-lg bg-ink-900/70 px-3.5 py-3 text-sm text-ink-300">
+              <p>
+                <span className="font-semibold text-ink-100">Reunião {formatDateTime(lead.meeting_at)}</span>
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={meetingHappened}
+                  disabled={meetingSaving}
+                  className="rounded-lg border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-60"
+                >
+                  Aconteceu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMeetingDialog('nao_compareceu')}
+                  className="rounded-lg border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:border-rose-500/40 hover:text-rose-300"
+                >
+                  Não compareceu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMeetingDialog('desmarcada')}
+                  className="rounded-lg border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:border-yellow-400/40 hover:text-yellow-200"
+                >
+                  Desmarcou
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMeetingDialog('remarcar')}
+                  className="rounded-lg border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:border-auron-500/50 hover:text-auron-200"
+                >
+                  Reagendar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {active && missed && (
             <div className="mt-4 rounded-lg border border-yellow-400/25 bg-yellow-400/5 px-3.5 py-3 text-sm text-yellow-100">
               <p>
                 <span className="font-semibold">
-                  {status.noShows >= NO_SHOW_LIMIT ? `Faltou ${status.noShows} vezes na reunião.` : 'Faltou na reunião.'}
+                  {lead.meeting_status === 'desmarcada' ? 'Desmarcou a reunião' : 'Não compareceu à reunião'}
+                  {status && status.noShows > 1 ? ` (${status.noShows}x)` : ''}.
                 </span>{' '}
-                {status.noShows >= NO_SHOW_LIMIT
-                  ? 'Vale desqualificar, a não ser que ele mesmo peça para remarcar.'
-                  : 'Chame no WhatsApp e remarque.'}
+                {lastMissReason && <span className="text-yellow-200/80">Motivo: {lastMissReason}. </span>}
+                {status && status.noShows >= NO_SHOW_LIMIT
+                  ? 'Vale desqualificar, a não ser que ele mesmo peça para reagendar.'
+                  : 'Chame no WhatsApp e reagende.'}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <input
-                  type="datetime-local"
-                  value={rescheduleAt}
-                  onChange={(event) => setRescheduleAt(event.target.value)}
-                  aria-label="Nova data da reunião"
-                  className="rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-1.5 text-xs text-ink-100 outline-none focus:border-auron-500 [color-scheme:dark]"
-                />
                 <button
                   type="button"
-                  onClick={reschedule}
-                  disabled={rescheduling}
-                  className="rounded-lg bg-auron-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-auron-500 disabled:opacity-60"
+                  onClick={() => setMeetingDialog('remarcar')}
+                  className="rounded-lg bg-auron-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-auron-500"
                 >
-                  {rescheduling ? 'Remarcando...' : 'Remarcar'}
+                  Reagendar
                 </button>
                 {lostStage && (
                   <button
                     type="button"
-                    onClick={() => disqualify('Faltou na reunião')}
+                    onClick={() =>
+                      disqualify(lead.meeting_status === 'desmarcada' ? 'Desmarcou e desistiu' : 'Faltou na reunião')
+                    }
                     disabled={disqualifying}
                     className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-60"
                   >
@@ -508,6 +540,19 @@ export function SdrLeadDetails({
                 )}
               </div>
             </div>
+          )}
+
+          {meetingDialog && (
+            <MeetingDialog
+              leadId={lead.id}
+              leadName={lead.name}
+              mode={meetingDialog}
+              onCancel={() => setMeetingDialog(null)}
+              onDone={() => {
+                setMeetingDialog(null)
+                router.refresh()
+              }}
+            />
           )}
 
           {/* Registro rápido do que foi feito */}

@@ -3,6 +3,7 @@
 import { ReactNode, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Send } from 'lucide-react'
+import { MeetingDialog, type MeetingDialogMode } from '@/components/meeting-dialog'
 import { SdrLeadDetails } from '@/components/sdr-lead-details'
 import { displayMessage, formatPhone, isTemplateMessage, templateMessages, whatsappUrl } from '@/lib/lead-cleanup'
 import {
@@ -79,6 +80,7 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
   const [now] = useState(() => Date.now())
   const [savingMeeting, setSavingMeeting] = useState<string | null>(null)
   const [savingAttempt, setSavingAttempt] = useState<string | null>(null)
+  const [meetingDialog, setMeetingDialog] = useState<{ lead: Lead; mode: MeetingDialogMode } | null>(null)
   const [openLeadId, setOpenLeadId] = useState<string | null>(null)
 
   const stageMap = useMemo(() => new Map(stages.map((stage) => [stage.id, stage])), [stages])
@@ -110,7 +112,17 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
     const byMeeting = (a: Lead, b: Lead) => new Date(a.meeting_at!).getTime() - new Date(b.meeting_at!).getTime()
 
     // Faltou na reunião: fica numa lista própria, com Remarcar/Desistiu.
-    const noShows = active.filter((lead) => lead.meeting_status === 'nao_compareceu')
+    const noShows = active.filter(
+      (lead) => lead.meeting_status === 'nao_compareceu' || lead.meeting_status === 'desmarcada'
+    )
+
+    // Último motivo de falta/desmarcação de cada lead.
+    const missReason = new Map<string, string>()
+    for (const item of [...activities].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+      if ((item.type === 'nao_compareceu' || item.type === 'reuniao_desmarcada') && item.note) {
+        missReason.set(item.lead_id, item.note)
+      }
+    }
     const noShowIds = new Set(noShows.map((lead) => lead.id))
 
     const followUps = active.filter(
@@ -172,6 +184,7 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
 
     return {
       status,
+      missReason,
       waiting,
       overdue,
       dueToday,
@@ -205,7 +218,7 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
     router.refresh()
   }
 
-  async function setMeetingResult(leadId: string, status: 'realizada' | 'nao_compareceu' | 'confirmar') {
+  async function setMeetingResult(leadId: string, status: 'realizada' | 'confirmar') {
     setSavingMeeting(leadId)
     const response = await fetch('/api/leads/meeting', {
       method: 'PATCH',
@@ -279,12 +292,25 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
         <button
           type="button"
           disabled={busy}
-          onClick={() => setMeetingResult(lead.id, 'nao_compareceu')}
+          onClick={() => setMeetingDialog({ lead, mode: 'nao_compareceu' })}
           className="rounded-lg border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:border-rose-500/40 hover:text-rose-300 disabled:opacity-50"
         >
           Não veio
         </button>
+        {cancelButton(lead)}
       </>
+    )
+  }
+
+  function cancelButton(lead: Lead) {
+    return (
+      <button
+        type="button"
+        onClick={() => setMeetingDialog({ lead, mode: 'desmarcada' })}
+        className="rounded-lg border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:border-yellow-400/40 hover:text-yellow-200"
+      >
+        Desmarcou
+      </button>
     )
   }
 
@@ -306,7 +332,12 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
   // Confirmar reunião: abre o WhatsApp com a mensagem pronta e registra a confirmação.
   function confirmButton(lead: Lead) {
     if (groups.confirmed.has(lead.id)) {
-      return <span className="text-xs font-medium text-emerald-300">Confirmada</span>
+      return (
+        <>
+          <span className="text-xs font-medium text-emerald-300">Confirmada</span>
+          {cancelButton(lead)}
+        </>
+      )
     }
     const url = whatsappUrl(lead.phone, confirmationText(lead, now))
     return (
@@ -329,6 +360,7 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
         >
           Confirmou
         </button>
+        {cancelButton(lead)}
       </>
     )
   }
@@ -384,20 +416,23 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
     },
     {
       key: 'no-shows',
-      title: 'Faltaram na reunião',
-      hint: 'Chame no WhatsApp e remarque. Na ficha: Remarcar ou Desistiu.',
+      title: 'Faltaram ou desmarcaram',
+      hint: 'Chame no WhatsApp e reagende. Desistiu? Abra a ficha.',
       items: groups.noShows.map((lead) => {
         const status = groups.status.get(lead.id)
+        const reason = groups.missReason.get(lead.id)
         return leadRow(
           lead,
-          `${status?.text ?? 'Faltou na reunião'}${lead.meeting_at ? ` · era ${formatDateTime(lead.meeting_at)}` : ''}`,
+          `${status?.text ?? 'Faltou na reunião'}${reason ? ` · ${reason}` : ''}${
+            lead.meeting_at ? ` · era ${formatDateTime(lead.meeting_at)}` : ''
+          }`,
           (status?.noShows ?? 0) >= NO_SHOW_LIMIT ? 'urgent' : 'attention',
           <button
             type="button"
-            onClick={() => setOpenLeadId(lead.id)}
+            onClick={() => setMeetingDialog({ lead, mode: 'remarcar' })}
             className="rounded-lg border border-yellow-400/40 px-3 py-1.5 text-xs font-medium text-yellow-200 transition hover:bg-yellow-400/10"
           >
-            Remarcar
+            Reagendar
           </button>
         )
       }),
@@ -477,6 +512,19 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
           <ul className="divide-y divide-ink-800/60">{section.items}</ul>
         </section>
       ))}
+
+      {meetingDialog && (
+        <MeetingDialog
+          leadId={meetingDialog.lead.id}
+          leadName={meetingDialog.lead.name}
+          mode={meetingDialog.mode}
+          onCancel={() => setMeetingDialog(null)}
+          onDone={() => {
+            setMeetingDialog(null)
+            router.refresh()
+          }}
+        />
+      )}
 
       {openLead && (
         <SdrLeadDetails
