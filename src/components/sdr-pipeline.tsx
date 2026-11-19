@@ -85,11 +85,11 @@ function formatCurrency(value: number | string) {
 }
 
 
-// Ordem dos cards em "Em conversa" (pedido do Rafael, 19/11): faltou na reunião primeiro,
-// depois sua vez, parou de responder, aguardando e, por último, nunca respondeu.
+// Ordem dos cards em "Em conversa" (pedido do Rafael, 19/11): sua vez primeiro,
+// depois faltou na reunião, parou de responder, aguardando e, por último, nunca respondeu.
 const CONVERSATION_COLUMN_ORDER: ConversationKind[] = [
-  'faltou_reuniao',
   'sua_vez',
+  'faltou_reuniao',
   'parou_de_responder',
   'aguardando',
   'nunca_respondeu',
