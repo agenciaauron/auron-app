@@ -84,6 +84,17 @@ function formatCurrency(value: number | string) {
   return Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+
+// Ordem dos cards em "Em conversa" (pedido do Rafael, 19/11): faltou na reunião primeiro,
+// depois sua vez, parou de responder, aguardando e, por último, nunca respondeu.
+const CONVERSATION_COLUMN_ORDER: ConversationKind[] = [
+  'faltou_reuniao',
+  'sua_vez',
+  'parou_de_responder',
+  'aguardando',
+  'nunca_respondeu',
+]
+
 export function SdrPipeline({ stages, leads, allLeads, history, activities, team, role }: Props) {
   const router = useRouter()
   const manager = isManager(role)
@@ -373,14 +384,20 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
           const olderLeads = hidesOld ? stageLeads.filter((lead) => idleDays(lead, now) >= RECENT_DAYS) : []
           const isConversation = stage.slug === CONVERSATION_STAGE_SLUG
           const statusCounts = new Map<ConversationKind, number>()
+          const statusRank = new Map<string, number>()
           if (isConversation) {
             for (const lead of stageLeads) {
               const status = conversationStatus(lead, touches, now)
               if (status) statusCounts.set(status.kind, (statusCounts.get(status.kind) ?? 0) + 1)
+              statusRank.set(lead.id, status ? CONVERSATION_COLUMN_ORDER.indexOf(status.kind) : CONVERSATION_COLUMN_ORDER.length)
             }
           }
           const showOlder = expandedStages.has(stage.id)
-          const shownLeads = showOlder ? [...recentLeads, ...olderLeads] : recentLeads
+          const unsortedLeads = showOlder ? [...recentLeads, ...olderLeads] : recentLeads
+          // Em conversa: agrupado pela cor do selo (a ordem dentro de cada cor continua a mesma).
+          const shownLeads = isConversation
+            ? [...unsortedLeads].sort((a, b) => (statusRank.get(a.id) ?? 99) - (statusRank.get(b.id) ?? 99))
+            : unsortedLeads
 
           return (
             <section
@@ -413,7 +430,7 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
 
               {isConversation && statusCounts.size > 0 && (
                 <div className="mb-2.5 flex flex-wrap gap-x-3 gap-y-1 px-1.5 text-[11px] text-ink-500">
-                  {(Object.keys(CONVERSATION_BADGES) as ConversationKind[])
+                  {CONVERSATION_COLUMN_ORDER
                     .filter((kind) => statusCounts.get(kind))
                     .map((kind) => (
                       <span key={kind} className="flex items-center gap-1.5">
