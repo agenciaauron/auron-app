@@ -6,14 +6,18 @@ import { ChevronDown, MessageCircle, X } from 'lucide-react'
 import { LOST_REASONS, displayMessage, formatPhone, whatsappUrl } from '@/lib/lead-cleanup'
 import {
   ACTIVITY_LABELS,
+  ATTEMPT_TYPES,
+  CONVERSATION_BADGES,
   MEETING_STATUS_LABELS,
   NO_REPLY_ATTEMPT_LIMIT,
-  NO_REPLY_STAGE_SLUG,
-  NO_REPLY_TAGS,
+  NO_SHOW_LIMIT,
   ORIGIN_LABELS,
   QUICK_ACTIVITIES,
+  conversationStatus,
   formatDateTime,
   noReplyAttempts,
+  suggestedFollowUp,
+  withStageTouches,
   fromLocalInput,
   isManager,
   isMeetingStage,
@@ -22,7 +26,6 @@ import {
   normalizeOrigin,
   type ActivityType,
   type MeetingStatus,
-  type NoReplyTag,
   type TeamMember,
 } from '@/lib/crm'
 import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
@@ -115,7 +118,7 @@ export function SdrLeadDetails({
   const isLostStage = Boolean(selectedStage?.is_lost)
   const isMeeting = isMeetingStage(selectedStage)
   const stageOptions = stages.filter(
-    (stage) => stageBelongsTo(stage, origin) || stage.id === lead.stage_id
+    (stage) => (stageBelongsTo(stage, origin) && !stage.archived) || stage.id === lead.stage_id
   )
   const sdrs = team.filter((member) => member.role === 'sdr')
   const sdrName = team.find((member) => member.user_id === lead.sdr_id)?.name
@@ -123,40 +126,17 @@ export function SdrLeadDetails({
   const isLandingPage = (lead.source ?? '').toLowerCase().includes('landing')
   // Anúncio que chegou sem a marca do anúncio: o evento vai pelo telefone (sem garantia de atribuição).
   const isAdWithoutReferral = (lead.source ?? '').toLowerCase().includes('sem identificação')
-  const inNoReply = currentStage?.slug === NO_REPLY_STAGE_SLUG
-  const attempts = inNoReply ? noReplyAttempts(lead, activities) : 0
-  const lostStage = stages.find((stage) => stage.is_lost)
+  const active = Boolean(currentStage) && !currentStage?.is_won && !currentStage?.is_lost
+  const touches = withStageTouches(activities, history, stages)
+  const status = active ? conversationStatus(lead, touches) : null
+  const badge = status ? CONVERSATION_BADGES[status.kind] : null
+  const lostStage = stages.find((stage) => stage.is_lost && !stage.archived)
   const [disqualifying, setDisqualifying] = useState(false)
-  const [noReplyTag, setNoReplyTag] = useState(lead.no_reply_tag)
-  const [tagSaving, setTagSaving] = useState(false)
+  const [rescheduleAt, setRescheduleAt] = useState('')
+  const [rescheduling, setRescheduling] = useState(false)
 
-  // Cor do "Sem resposta": clicar na cor marcada desmarca.
-  async function chooseNoReplyTag(tag: NoReplyTag) {
-    const next = noReplyTag === tag ? null : tag
-    const previous = noReplyTag
-    setNoReplyTag(next)
-    setTagSaving(true)
-    setError('')
-
-    const response = await fetch('/api/leads/tag', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leadId: lead.id, tag: next }),
-    })
-    const result = await response.json()
-    setTagSaving(false)
-
-    if (!response.ok) {
-      setNoReplyTag(previous)
-      setError(result.error || 'Não foi possível salvar a cor.')
-      return
-    }
-
-    router.refresh()
-  }
-
-  // Atingiu o limite de tentativas em "Sem resposta": desqualifica com "Não respondeu".
-  async function disqualifyNoReply() {
+  // Desistência direto da ficha (ex.: faltou na reunião e não quer remarcar).
+  async function disqualify(reason: string) {
     if (!lostStage) return
     setDisqualifying(true)
     setError('')
@@ -164,13 +144,40 @@ export function SdrLeadDetails({
     const response = await fetch('/api/leads/stage', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leadId: lead.id, stageId: lostStage.id, strict: true, lostReason: 'Não respondeu' }),
+      body: JSON.stringify({ leadId: lead.id, stageId: lostStage.id, strict: true, lostReason: reason }),
     })
     const result = await response.json()
     setDisqualifying(false)
 
     if (!response.ok) {
       setError(result.error || 'Não foi possível desqualificar o lead.')
+      return
+    }
+
+    close()
+    router.refresh()
+  }
+
+  // Faltou na reunião: escolhe a nova data e a reunião volta a ficar agendada.
+  async function reschedule() {
+    const meetingAt = fromLocalInput(rescheduleAt)
+    if (!meetingAt) {
+      setError('Escolha a nova data e hora da reunião.')
+      return
+    }
+    setRescheduling(true)
+    setError('')
+
+    const response = await fetch('/api/leads/meeting', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId: lead.id, status: 'remarcar', meetingAt }),
+    })
+    const result = await response.json()
+    setRescheduling(false)
+
+    if (!response.ok) {
+      setError(result.error || 'Não foi possível remarcar.')
       return
     }
 
@@ -305,8 +312,15 @@ export function SdrLeadDetails({
   function startActivity(type: ActivityType) {
     setActivityType(type)
     setActivityNote('')
-    setActivityNext(toLocalInput(lead.next_action_at))
-    setActivityNextNote(lead.next_action_note ?? '')
+    // Tentativa de contato: já sugere o próximo follow-up pela cadência (+1, +2, +4 dias).
+    const suggestion = ATTEMPT_TYPES.has(type) ? suggestedFollowUp(noReplyAttempts(lead, touches) + 1) : null
+    if (ATTEMPT_TYPES.has(type)) {
+      setActivityNext(toLocalInput(suggestion?.at ?? null))
+      setActivityNextNote(suggestion?.note ?? '')
+    } else {
+      setActivityNext(toLocalInput(lead.next_action_at))
+      setActivityNextNote(lead.next_action_note ?? '')
+    }
     setActivityError('')
   }
 
@@ -442,51 +456,57 @@ export function SdrLeadDetails({
             </div>
           )}
 
-          {inNoReply && (
-            <div
-              className={`mt-4 rounded-lg px-3.5 py-3 text-sm ${
-                attempts >= NO_REPLY_ATTEMPT_LIMIT
-                  ? 'border border-rose-500/25 bg-rose-500/5 text-rose-200'
-                  : 'bg-ink-900/70 text-ink-300'
-              }`}
-            >
+          {status && badge && status.kind !== 'faltou_reuniao' && (
+            <div className="mt-4 flex items-start gap-2.5 rounded-lg bg-ink-900/70 px-3.5 py-3 text-sm text-ink-300">
+              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${badge.dot}`} aria-hidden />
+              <p>
+                <span className="font-semibold text-ink-100">{status.text}</span>
+                {status.kind === 'sua_vez'
+                  ? '. Responda e registre "Mandou mensagem".'
+                  : status.attempts >= NO_REPLY_ATTEMPT_LIMIT
+                    ? '. Sem resposta em 2 dias, ele vai sozinho para Desqualificado (Não respondeu). Se responder, volta.'
+                    : ''}
+              </p>
+            </div>
+          )}
+
+          {status?.kind === 'faltou_reuniao' && (
+            <div className="mt-4 rounded-lg border border-yellow-400/25 bg-yellow-400/5 px-3.5 py-3 text-sm text-yellow-100">
               <p>
                 <span className="font-semibold">
-                  {attempts} de {NO_REPLY_ATTEMPT_LIMIT} tentativas
+                  {status.noShows >= NO_SHOW_LIMIT ? `Faltou ${status.noShows} vezes na reunião.` : 'Faltou na reunião.'}
                 </span>{' '}
-                sem resposta desde a última mensagem do lead.
+                {status.noShows >= NO_SHOW_LIMIT
+                  ? 'Vale desqualificar, a não ser que ele mesmo peça para remarcar.'
+                  : 'Chame no WhatsApp e remarque.'}
               </p>
-              <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Cor do lead">
-                {NO_REPLY_TAGS.map((option) => {
-                  const selected = noReplyTag === option.value
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => chooseNoReplyTag(option.value)}
-                      disabled={tagSaving}
-                      aria-pressed={selected}
-                      title={selected ? 'Clique para tirar a cor' : `Marcar como ${option.label.toLowerCase()}`}
-                      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition disabled:opacity-60 ${
-                        selected ? `${option.card} ${option.chip}` : 'border-ink-700 text-ink-300 hover:bg-ink-800'
-                      }`}
-                    >
-                      <span className={`h-2.5 w-2.5 rounded-full ${option.dot}`} aria-hidden />
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
-              {attempts >= NO_REPLY_ATTEMPT_LIMIT && lostStage && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  type="datetime-local"
+                  value={rescheduleAt}
+                  onChange={(event) => setRescheduleAt(event.target.value)}
+                  aria-label="Nova data da reunião"
+                  className="rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-1.5 text-xs text-ink-100 outline-none focus:border-auron-500 [color-scheme:dark]"
+                />
                 <button
                   type="button"
-                  onClick={disqualifyNoReply}
-                  disabled={disqualifying}
-                  className="mt-2.5 rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-60"
+                  onClick={reschedule}
+                  disabled={rescheduling}
+                  className="rounded-lg bg-auron-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-auron-500 disabled:opacity-60"
                 >
-                  {disqualifying ? 'Movendo...' : 'Mover para Desqualificado (Não respondeu)'}
+                  {rescheduling ? 'Remarcando...' : 'Remarcar'}
                 </button>
-              )}
+                {lostStage && (
+                  <button
+                    type="button"
+                    onClick={() => disqualify('Faltou na reunião')}
+                    disabled={disqualifying}
+                    className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-60"
+                  >
+                    {disqualifying ? 'Movendo...' : 'Desistiu'}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

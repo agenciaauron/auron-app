@@ -12,6 +12,8 @@ export type ActivityType =
   | 'reuniao_realizada'
   | 'nao_compareceu'
   | 'nota'
+  | 'reuniao_confirmada'
+  | 'reuniao_remarcada'
 
 export type TeamMember = {
   user_id: string
@@ -50,21 +52,35 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   reuniao_realizada: 'Reunião aconteceu',
   nao_compareceu: 'Não compareceu à reunião',
   nota: 'Anotação',
+  reuniao_confirmada: 'Confirmou a reunião',
+  reuniao_remarcada: 'Remarcou a reunião',
 }
 
 // Atividades que o SDR registra pelos botões rápidos.
 export const QUICK_ACTIVITIES: ActivityType[] = ['ligacao', 'mensagem', 'nao_atendeu', 'nota']
 
-// Etapa "Sem resposta": contam como tentativa as mensagens/ligações feitas depois da última
-// mensagem do lead. A partir do limite, o CRM sugere desqualificar com "Não respondeu".
-export const NO_REPLY_STAGE_SLUG = 'sem-resposta'
-export const NO_REPLY_ATTEMPT_LIMIT = 4
-const ATTEMPT_TYPES = new Set(['mensagem', 'ligacao', 'nao_atendeu'])
+// "Em conversa": a etapa única de quem já recebeu contato. O CRM calcula sozinho de quem é a vez.
+export const CONVERSATION_STAGE_SLUG = 'em-contato'
+export const ENTRY_STAGE_SLUG = 'novo-lead'
+export const QUALIFIED_STAGE_SLUG = 'qualificado'
 
-export function noReplyAttempts(
-  lead: { id: string; created_at: string; last_message_at?: string | null },
-  activities: { lead_id: string; type: string; created_at: string }[]
-) {
+// Depois de 4 tentativas sem resposta (e 2 dias de silêncio), o banco desqualifica sozinho
+// às 9h com "Não respondeu". Se o lead responder depois, o webhook devolve para "Em conversa".
+export const NO_REPLY_ATTEMPT_LIMIT = 4
+// Quem faltou 2 vezes na reunião: o CRM sugere desqualificar.
+export const NO_SHOW_LIMIT = 2
+// Sem resposta há mais que isso: o selo fica vermelho (nunca respondeu) ou laranja (parou).
+const STALE_MS = 24 * 3600000
+// Cadência do follow-up: depois da 1ª tentativa, +1 dia; da 2ª, +2 dias; da 3ª, +4 dias.
+const FOLLOW_UP_DAYS = [1, 2, 4]
+
+export const ATTEMPT_TYPES = new Set(['mensagem', 'ligacao', 'nao_atendeu'])
+
+type LeadTimes = { id: string; created_at: string; last_message_at?: string | null }
+type ActivityTimes = { lead_id: string; type: string; created_at: string }
+
+// Tentativas (mensagem/ligação/não atendeu) depois da última mensagem do lead.
+export function noReplyAttempts(lead: LeadTimes, activities: ActivityTimes[]) {
   const since = new Date(lead.last_message_at ?? lead.created_at).getTime()
   return activities.filter(
     (item) =>
@@ -74,45 +90,137 @@ export function noReplyAttempts(
   ).length
 }
 
-// Cor que o SDR marca no lead em "Sem resposta" para se organizar.
-export type NoReplyTag = 'nunca_respondeu' | 'parou_de_responder' | 'faltou_reuniao'
+// Arrastar o card para "Em conversa" (ou para o antigo "Sem resposta") também conta como contato:
+// muita mensagem é mandada direto no WhatsApp sem registrar no CRM.
+const CONTACT_STAGE_SLUGS = new Set([CONVERSATION_STAGE_SLUG, 'sem-resposta'])
 
-export const NO_REPLY_TAGS: {
-  value: NoReplyTag
-  label: string
-  color: string
-  dot: string
-  card: string
-  chip: string
-}[] = [
-  {
-    value: 'nunca_respondeu',
+export function withStageTouches(
+  activities: ActivityTimes[],
+  history: { lead_id: string; to_stage_id: string | null; created_at: string; event_type?: string; user_id?: string | null }[],
+  stages: { id: string; slug: string | null }[]
+): ActivityTimes[] {
+  const contactStageIds = new Set(
+    stages.filter((stage) => stage.slug && CONTACT_STAGE_SLUGS.has(stage.slug)).map((stage) => stage.id)
+  )
+  const touches = history
+    // Só movimento feito por alguém da equipe (o webhook/sistema move sem usuário quando o lead responde).
+    .filter(
+      (item) =>
+        item.event_type !== 'created' && item.user_id && item.to_stage_id && contactStageIds.has(item.to_stage_id)
+    )
+    .map((item) => ({ lead_id: item.lead_id, type: 'mensagem', created_at: item.created_at }))
+  return touches.length ? [...activities, ...touches] : activities
+}
+
+// Próximo follow-up depois da tentativa número `attempt` (contando a que acabou de ser feita).
+export function suggestedFollowUp(attempt: number, now = Date.now()) {
+  const days = FOLLOW_UP_DAYS[attempt - 1]
+  if (!days) return null
+  return {
+    at: new Date(now + days * 86400000).toISOString(),
+    note: `Follow-up ${attempt + 1} de ${NO_REPLY_ATTEMPT_LIMIT}`,
+  }
+}
+
+export type ConversationKind =
+  | 'sua_vez'
+  | 'aguardando'
+  | 'nunca_respondeu'
+  | 'parou_de_responder'
+  | 'faltou_reuniao'
+
+// Selo do card: vermelho = nunca respondeu, laranja = parou de responder,
+// amarelo = faltou na reunião, verde = o lead respondeu e é a sua vez.
+export const CONVERSATION_BADGES: Record<
+  ConversationKind,
+  { label: string; dot: string; card: string; chip: string }
+> = {
+  sua_vez: {
+    label: 'Sua vez',
+    dot: 'bg-emerald-400',
+    card: 'border-emerald-500/50',
+    chip: 'bg-emerald-500/15 text-emerald-300',
+  },
+  aguardando: {
+    label: 'Aguardando',
+    dot: 'bg-ink-500',
+    card: 'border-ink-800/80',
+    chip: 'bg-ink-800 text-ink-300',
+  },
+  nunca_respondeu: {
     label: 'Nunca respondeu',
-    color: 'Vermelho',
     dot: 'bg-red-500',
-    card: 'border-red-500/70',
+    card: 'border-red-500/60',
     chip: 'bg-red-500/15 text-red-300',
   },
-  {
-    value: 'parou_de_responder',
+  parou_de_responder: {
     label: 'Parou de responder',
-    color: 'Laranja',
     dot: 'bg-orange-500',
-    card: 'border-orange-500/70',
+    card: 'border-orange-500/60',
     chip: 'bg-orange-500/15 text-orange-300',
   },
-  {
-    value: 'faltou_reuniao',
+  faltou_reuniao: {
     label: 'Faltou na reunião',
-    color: 'Amarelo',
     dot: 'bg-yellow-400',
-    card: 'border-yellow-400/70',
+    card: 'border-yellow-400/60',
     chip: 'bg-yellow-400/15 text-yellow-200',
   },
-]
+}
 
-export function noReplyTagInfo(value: string | null | undefined) {
-  return NO_REPLY_TAGS.find((tag) => tag.value === value) ?? null
+export type ConversationStatus = {
+  kind: ConversationKind
+  text: string
+  attempts: number
+  noShows: number
+}
+
+// De quem é a vez na conversa, calculado pelas mensagens do lead e pelas tentativas registradas.
+export function conversationStatus(
+  lead: LeadTimes & { meeting_status?: string | null },
+  activities: ActivityTimes[],
+  now = Date.now()
+): ConversationStatus | null {
+  const own = activities.filter((item) => item.lead_id === lead.id)
+  const noShows = own.filter((item) => item.type === 'nao_compareceu').length
+
+  if (lead.meeting_status === 'nao_compareceu') {
+    return {
+      kind: 'faltou_reuniao',
+      text: noShows >= NO_SHOW_LIMIT ? `Faltou ${noShows}x · desqualificar?` : 'Faltou na reunião · remarcar',
+      attempts: 0,
+      noShows,
+    }
+  }
+
+  if (lead.meeting_status === 'agendada') return null
+
+  const attemptTimes = own
+    .filter((item) => ATTEMPT_TYPES.has(item.type))
+    .map((item) => new Date(item.created_at).getTime())
+  const inbound = lead.last_message_at ? new Date(lead.last_message_at).getTime() : null
+
+  if (attemptTimes.length === 0) {
+    return inbound ? { kind: 'sua_vez', text: 'Mandou mensagem · sua vez', attempts: 0, noShows } : null
+  }
+
+  const lastAttempt = Math.max(...attemptTimes)
+  const firstAttempt = Math.min(...attemptTimes)
+
+  if (inbound && inbound > lastAttempt) {
+    return { kind: 'sua_vez', text: 'Respondeu · sua vez', attempts: 0, noShows }
+  }
+
+  const attempts = noReplyAttempts(lead, activities)
+  const count = `${attempts} de ${NO_REPLY_ATTEMPT_LIMIT}`
+
+  if (now - lastAttempt < STALE_MS) {
+    return { kind: 'aguardando', text: `Aguardando resposta · ${count}`, attempts, noShows }
+  }
+
+  const replied = inbound !== null && inbound > firstAttempt
+  return replied
+    ? { kind: 'parou_de_responder', text: `Parou de responder · ${count}`, attempts, noShows }
+    : { kind: 'nunca_respondeu', text: `Nunca respondeu · ${count}`, attempts, noShows }
 }
 
 export const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {

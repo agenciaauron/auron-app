@@ -8,6 +8,7 @@ export type Stage = {
   is_won: boolean
   is_lost: boolean
   pipeline: string | null
+  archived?: boolean | null
 }
 
 export type Lead = {
@@ -59,7 +60,7 @@ export type Activity = {
   created_at: string
 }
 
-export const STAGE_SELECT = 'id, name, slug, position, is_won, is_lost, pipeline'
+export const STAGE_SELECT = 'id, name, slug, position, is_won, is_lost, pipeline, archived'
 
 export const LEAD_SELECT =
   'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at, last_message, last_message_at, lost_reason, integration_source, ctwa_clid, meta_qualified_sent_at, meta_purchase_sent_at, meta_last_error, meta_last_error_at, origin, sdr_id, next_action_at, next_action_note, meeting_at, meeting_status, won_at, no_reply_tag'

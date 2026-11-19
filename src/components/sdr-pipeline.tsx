@@ -8,6 +8,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   MessageCircle,
+  Send,
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
@@ -26,17 +27,18 @@ import {
   whatsappUrl,
 } from '@/lib/lead-cleanup'
 import {
-  NO_REPLY_ATTEMPT_LIMIT,
-  NO_REPLY_STAGE_SLUG,
-  NO_REPLY_TAGS,
+  CONVERSATION_BADGES,
+  CONVERSATION_STAGE_SLUG,
+  ENTRY_STAGE_SLUG,
+  QUALIFIED_STAGE_SLUG,
+  conversationStatus,
   dueLabel,
   dueState,
   formatDateTime,
   fromLocalInput,
   isManager,
-  noReplyAttempts,
-  noReplyTagInfo,
-  type NoReplyTag,
+  withStageTouches,
+  type ConversationKind,
   type TeamMember,
 } from '@/lib/crm'
 import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
@@ -91,7 +93,10 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
   const [savingLeadId, setSavingLeadId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null)
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set())
-  const [lostOpen, setLostOpen] = useState(false)
+  // Qualificado e Desqualificado começam recolhidas (só a faixa com o nome e o total).
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => new Set(stages.filter((stage) => stage.is_lost || stage.slug === QUALIFIED_STAGE_SLUG).map((stage) => stage.id))
+  )
   const [openLeadId, setOpenLeadId] = useState<string | null>(null)
   const [now] = useState(() => Date.now())
 
@@ -103,8 +108,21 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
   }
 
   const templates = useMemo(() => templateMessages(allLeads ?? leads), [allLeads, leads])
-  const entryStageId = stages.find((stage) => !stage.is_won && !stage.is_lost)?.id
+  // "Sem resposta" foi arquivada: some do funil, mas o histórico antigo continua com o nome.
+  const visibleStages = useMemo(() => stages.filter((stage) => !stage.archived), [stages])
+  // Tentativas registradas + movimentos para "Em conversa" (contam como contato).
+  const touches = useMemo(() => withStageTouches(activities, history, stages), [activities, history, stages])
+  const entryStageId = visibleStages.find((stage) => !stage.is_won && !stage.is_lost)?.id
   const openLead = localLeads.find((lead) => lead.id === openLeadId)
+
+  function toggleCollapsed(stageId: string) {
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (next.has(stageId)) next.delete(stageId)
+      else next.add(stageId)
+      return next
+    })
+  }
 
   function toggleOlder(stageId: string) {
     setExpandedStages((current) => {
@@ -241,30 +259,25 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
     }
   }
 
-  // Cor do "Sem resposta": clicar na cor marcada desmarca.
-  async function setNoReplyTag(leadId: string, tag: NoReplyTag | null) {
-    const lead = localLeads.find((item) => item.id === leadId)
-    if (!lead) return
-    const previous = lead.no_reply_tag
-
-    setLocalLeads((current) => current.map((item) => (item.id === leadId ? { ...item, no_reply_tag: tag } : item)))
-
+  // Botão rápido do card: registra "Mandei mensagem" (agenda o próximo follow-up e,
+  // se o lead estiver em Novo lead, move para Em conversa).
+  async function logMessage(leadId: string) {
+    setSavingLeadId(leadId)
     try {
-      const response = await fetch('/api/leads/tag', {
-        method: 'PATCH',
+      const response = await fetch('/api/leads/activity', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, tag }),
+        body: JSON.stringify({ leadId, type: 'mensagem' }),
       })
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Não foi possível salvar a cor.')
+      if (!response.ok) throw new Error(result.error || 'Não foi possível registrar.')
       startTransition(() => {
         router.refresh()
       })
     } catch (error) {
-      setLocalLeads((current) =>
-        current.map((item) => (item.id === leadId ? { ...item, no_reply_tag: previous } : item))
-      )
-      alert(error instanceof Error && error.message ? error.message : 'Não foi possível salvar a cor.')
+      alert(error instanceof Error && error.message ? error.message : 'Não foi possível registrar.')
+    } finally {
+      setSavingLeadId(null)
     }
   }
 
@@ -291,12 +304,14 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
   return (
     <>
       <div className="pipeline-scrollbar flex gap-3 overflow-x-auto pb-3">
-        {stages.map((stage) => {
+        {visibleStages.map((stage) => {
           const stageLeads = localLeads.filter((lead) => lead.stage_id === stage.id)
           const isDropTarget = overStageId === stage.id && draggingLeadId !== null
           const dot = stage.is_won ? 'bg-emerald-400' : stage.is_lost ? 'bg-rose-400' : 'bg-auron-400'
 
-          if (stage.is_lost && !lostOpen) {
+          const collapsible = stage.is_lost || stage.slug === QUALIFIED_STAGE_SLUG
+
+          if (collapsible && collapsed.has(stage.id)) {
             return (
               <section
                 key={stage.id}
@@ -307,7 +322,7 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
               >
                 <button
                   type="button"
-                  onClick={() => setLostOpen(true)}
+                  onClick={() => toggleCollapsed(stage.id)}
                   title={`Mostrar ${stage.name}`}
                   className="flex flex-1 flex-col items-center gap-3 text-ink-400 transition hover:text-ink-100"
                 >
@@ -322,9 +337,17 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
             )
           }
 
-          const collapsible = stage.is_lost || stage.id === entryStageId
-          const recentLeads = collapsible ? stageLeads.filter((lead) => idleDays(lead, now) < RECENT_DAYS) : stageLeads
-          const olderLeads = collapsible ? stageLeads.filter((lead) => idleDays(lead, now) >= RECENT_DAYS) : []
+          const hidesOld = stage.is_lost || stage.id === entryStageId
+          const recentLeads = hidesOld ? stageLeads.filter((lead) => idleDays(lead, now) < RECENT_DAYS) : stageLeads
+          const olderLeads = hidesOld ? stageLeads.filter((lead) => idleDays(lead, now) >= RECENT_DAYS) : []
+          const isConversation = stage.slug === CONVERSATION_STAGE_SLUG
+          const statusCounts = new Map<ConversationKind, number>()
+          if (isConversation) {
+            for (const lead of stageLeads) {
+              const status = conversationStatus(lead, touches, now)
+              if (status) statusCounts.set(status.kind, (statusCounts.get(status.kind) ?? 0) + 1)
+            }
+          }
           const showOlder = expandedStages.has(stage.id)
           const shownLeads = showOlder ? [...recentLeads, ...olderLeads] : recentLeads
 
@@ -345,10 +368,10 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                   </span>
                 </div>
 
-                {stage.is_lost && (
+                {collapsible && (
                   <button
                     type="button"
-                    onClick={() => setLostOpen(false)}
+                    onClick={() => toggleCollapsed(stage.id)}
                     title="Recolher coluna"
                     className="rounded-md p-1 text-ink-500 transition hover:bg-ink-800 hover:text-ink-200"
                   >
@@ -357,17 +380,17 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                 )}
               </div>
 
-              {stage.slug === NO_REPLY_STAGE_SLUG && (
+              {isConversation && statusCounts.size > 0 && (
                 <div className="mb-2.5 flex flex-wrap gap-x-3 gap-y-1 px-1.5 text-[11px] text-ink-500">
-                  {NO_REPLY_TAGS.map((option) => (
-                    <span key={option.value} className="flex items-center gap-1.5">
-                      <span className={`h-2 w-2 rounded-full ${option.dot}`} aria-hidden />
-                      {option.label}
-                      <span className="tabular text-ink-600">
-                        {stageLeads.filter((lead) => lead.no_reply_tag === option.value).length}
+                  {(Object.keys(CONVERSATION_BADGES) as ConversationKind[])
+                    .filter((kind) => statusCounts.get(kind))
+                    .map((kind) => (
+                      <span key={kind} className="flex items-center gap-1.5">
+                        <span className={`h-2 w-2 rounded-full ${CONVERSATION_BADGES[kind].dot}`} aria-hidden />
+                        {CONVERSATION_BADGES[kind].label}
+                        <span className="tabular text-ink-400">{statusCounts.get(kind)}</span>
                       </span>
-                    </span>
-                  ))}
+                    ))}
                 </div>
               )}
 
@@ -391,8 +414,9 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                   const showMessage = !isTemplateMessage(lead.last_message, templates)
                   const active = !stage.is_won && !stage.is_lost
                   const due = active && lead.next_action_at ? dueState(lead.next_action_at, now) : null
-                  const inNoReply = stage.slug === NO_REPLY_STAGE_SLUG
-                  const tag = inNoReply ? noReplyTagInfo(lead.no_reply_tag) : null
+                  // Novo lead: todos esperam o primeiro contato, então o selo só aparece depois.
+                  const status = active && stage.slug !== ENTRY_STAGE_SLUG ? conversationStatus(lead, touches, now) : null
+                  const badge = status ? CONVERSATION_BADGES[status.kind] : null
 
                   return (
                     <div
@@ -414,8 +438,8 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                         if (event.key === 'Enter') setOpenLeadId(lead.id)
                       }}
                       className={`group relative cursor-pointer rounded-xl border bg-ink-900 py-2.5 pl-3.5 pr-3 transition active:cursor-grabbing ${
-                        tag ? tag.card : 'border-ink-800/80'
-                      } ${isDragging ? 'opacity-40' : tag ? 'hover:bg-[#1b182c]' : 'hover:border-ink-700 hover:bg-[#1b182c]'} ${
+                        badge && status?.kind !== 'aguardando' ? badge.card : 'border-ink-800/80'
+                      } ${isDragging ? 'opacity-40' : badge ? 'hover:bg-[#1b182c]' : 'hover:border-ink-700 hover:bg-[#1b182c]'} ${
                         isSaving ? 'pointer-events-none opacity-60' : ''
                       }`}
                     >
@@ -468,53 +492,12 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                         )
                       )}
 
-                      {inNoReply && (() => {
-                        const attempts = noReplyAttempts(lead, activities)
-                        return (
-                          <>
-                            {tag && (
-                              <p className={`mt-2 inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${tag.chip}`}>
-                                {tag.label}
-                              </p>
-                            )}
-                            <div className="mt-2 flex items-center gap-2.5">
-                              <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Cor do lead">
-                                {NO_REPLY_TAGS.map((option) => {
-                                  const selected = lead.no_reply_tag === option.value
-                                  return (
-                                    <button
-                                      key={option.value}
-                                      type="button"
-                                      draggable={false}
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        void setNoReplyTag(lead.id, selected ? null : option.value)
-                                      }}
-                                      onKeyDown={(event) => event.stopPropagation()}
-                                      title={`${option.color}: ${option.label}${selected ? ' (clique para tirar)' : ''}`}
-                                      aria-label={`${option.color}: ${option.label}`}
-                                      aria-pressed={selected}
-                                      className={`h-4 w-4 rounded-full ${option.dot} transition ${
-                                        selected
-                                          ? 'ring-2 ring-ink-50 ring-offset-2 ring-offset-ink-900'
-                                          : 'opacity-35 hover:opacity-100'
-                                      }`}
-                                    />
-                                  )
-                                })}
-                              </div>
-                              <p
-                                className={`text-[12px] font-medium ${
-                                  attempts >= NO_REPLY_ATTEMPT_LIMIT ? 'text-rose-300' : 'text-ink-400'
-                                }`}
-                              >
-                                {attempts} de {NO_REPLY_ATTEMPT_LIMIT} tentativas
-                                {attempts >= NO_REPLY_ATTEMPT_LIMIT && ' · desqualificar?'}
-                              </p>
-                            </div>
-                          </>
-                        )
-                      })()}
+                      {status && badge && (
+                        <p className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold ${badge.chip}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} aria-hidden />
+                          {status.text}
+                        </p>
+                      )}
 
                       {stage.is_lost && lead.lost_reason && (
                         <p className="mt-2 inline-flex rounded-md bg-rose-400/10 px-2 py-0.5 text-[11px] font-semibold text-rose-300">
@@ -529,6 +512,20 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                       )}
 
                       <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 rounded-lg bg-ink-900/95 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                        {active && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void logMessage(lead.id)
+                            }}
+                            title="Registrar: mandei mensagem (agenda o próximo follow-up)"
+                            aria-label={`Registrar mensagem enviada para ${lead.name}`}
+                            className="rounded-md p-1.5 text-ink-400 transition hover:bg-auron-500/15 hover:text-auron-200"
+                          >
+                            <Send className="h-4 w-4" strokeWidth={2} aria-hidden />
+                          </button>
+                        )}
                         {waUrl && (
                           <a
                             href={waUrl}

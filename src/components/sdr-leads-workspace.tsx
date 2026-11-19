@@ -87,7 +87,10 @@ export function SdrLeadsWorkspace({ stages, leads, history, activities, team, ro
   const templates = useMemo(() => templateMessages(leads), [leads])
   const openLead = leads.find((lead) => lead.id === openLeadId)
 
-  const frontStages = useMemo(() => stages.filter((stage) => stageBelongsTo(stage, front)), [stages, front])
+  const frontStages = useMemo(
+    () => stages.filter((stage) => stageBelongsTo(stage, front) && !stage.archived),
+    [stages, front]
+  )
   const frontLeads = useMemo(() => leads.filter((lead) => normalizeOrigin(lead.origin) === front), [leads, front])
   const frontCounts = useMemo(() => {
     const counts = { trafego: 0, prospeccao: 0 }
@@ -276,7 +279,7 @@ export function SdrLeadsWorkspace({ stages, leads, history, activities, team, ro
             <FilterSelect label="Etapa" value={stageFilter} onChange={setStageFilter}>
               <option value="active">Etapa: ativas</option>
               <option value="all">Etapa: todas</option>
-              {stages.map((stage) => (
+              {stages.filter((stage) => !stage.archived).map((stage) => (
                 <option key={stage.id} value={stage.id}>
                   {stage.name}
                 </option>

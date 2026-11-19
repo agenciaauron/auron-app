@@ -331,12 +331,12 @@ export function CampaignsWorkspace({ account, insights, objects, stages, leads, 
       (stage) => !stage.is_lost && normalize(`${stage.slug} ${stage.name}`).includes('qualific')
     )
 
-    // Chegou em Qualificado ou em qualquer etapa depois dela (Reunião, Venda).
+    // Chegou em Qualificado, Reunião ou Venda (Qualificado agora fica no fim do funil, ao lado de Desqualificado).
     function isQualifiedStage(stageId: string | null) {
       const stage = stageId ? stageMap.get(stageId) : null
       if (!stage || stage.is_lost) return false
-      if (stage.is_won) return true
-      return qualifiedStage ? stage.position >= qualifiedStage.position : false
+      if (stage.is_won || stage.id === qualifiedStage?.id) return true
+      return normalize(`${stage.slug} ${stage.name}`).includes('reuniao')
     }
 
     const reachedQualified = new Set<string>()

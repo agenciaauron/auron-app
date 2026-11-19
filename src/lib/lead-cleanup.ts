@@ -4,6 +4,7 @@ export const LOST_REASONS = [
   'Fora do perfil',
   'Só curiosidade',
   'Fechou com outro',
+  'Faltou na reunião',
   'Outro',
 ] as const
 
@@ -98,8 +99,9 @@ export function isTemplateMessage(message: string | null | undefined, templates:
   return !message || templates.has(messageKey(message))
 }
 
-export function whatsappUrl(raw: string | null | undefined) {
+export function whatsappUrl(raw: string | null | undefined, text?: string) {
   const digits = (raw ?? '').replace(/\D/g, '')
   if (digits.length < 10) return null
-  return `https://wa.me/${digits.startsWith('55') ? digits : `55${digits}`}`
+  const url = `https://wa.me/${digits.startsWith('55') ? digits : `55${digits}`}`
+  return text ? `${url}?text=${encodeURIComponent(text)}` : url
 }

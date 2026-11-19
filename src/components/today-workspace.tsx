@@ -2,18 +2,18 @@
 
 import { ReactNode, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageCircle } from 'lucide-react'
+import { MessageCircle, Send } from 'lucide-react'
 import { SdrLeadDetails } from '@/components/sdr-lead-details'
 import { displayMessage, formatPhone, isTemplateMessage, templateMessages, whatsappUrl } from '@/lib/lead-cleanup'
 import {
-  NO_REPLY_ATTEMPT_LIMIT,
-  NO_REPLY_STAGE_SLUG,
-  noReplyAttempts,
+  NO_SHOW_LIMIT,
   ORIGIN_LABELS,
+  conversationStatus,
   dueLabel,
   dueState,
   formatDateTime,
   normalizeOrigin,
+  withStageTouches,
   type TeamMember,
 } from '@/lib/crm'
 import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
@@ -30,7 +30,8 @@ type Props = {
 
 type Tone = 'urgent' | 'attention' | 'info' | 'neutral'
 
-// Leads que mandaram mensagem há mais de 3 dias saem da fila de "esperando resposta".
+// Leads que mandaram mensagem há mais de 3 dias saem da fila de "Responder agora"
+// (continuam com o selo verde no funil).
 const WAITING_WINDOW_HOURS = 72
 
 const TONE_DOT: Record<Tone, string> = {
@@ -59,24 +60,30 @@ function timeOf(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(new Date(value))
 }
 
+// Mensagem pronta para confirmar a reunião pelo WhatsApp.
+function confirmationText(lead: Lead, now: number) {
+  const meeting = new Date(lead.meeting_at!)
+  const todayStart = startOfDay(now)
+  const day =
+    meeting.getTime() < todayStart + 86400000
+      ? 'hoje'
+      : meeting.getTime() < todayStart + 2 * 86400000
+        ? 'amanhã'
+        : new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(meeting)
+  const firstName = lead.name.trim().split(/\s+/)[0]
+  return `Oi, ${firstName}! Tudo bem? Passando para confirmar nossa conversa ${day} às ${timeOf(lead.meeting_at!)}. Podemos manter?`
+}
+
 export function TodayWorkspace({ userId, role, stages, leads, history, activities, team }: Props) {
   const router = useRouter()
   const [now] = useState(() => Date.now())
   const [savingMeeting, setSavingMeeting] = useState<string | null>(null)
+  const [savingAttempt, setSavingAttempt] = useState<string | null>(null)
   const [openLeadId, setOpenLeadId] = useState<string | null>(null)
 
   const stageMap = useMemo(() => new Map(stages.map((stage) => [stage.id, stage])), [stages])
   const templates = useMemo(() => templateMessages(leads), [leads])
   const openLead = leads.find((lead) => lead.id === openLeadId)
-
-  const lastTouch = useMemo(() => {
-    const map = new Map<string, number>()
-    activities.forEach((item) => {
-      const time = new Date(item.created_at).getTime()
-      if (time > (map.get(item.lead_id) ?? 0)) map.set(item.lead_id, time)
-    })
-    return map
-  }, [activities])
 
   const groups = useMemo(() => {
     const todayStart = startOfDay(now)
@@ -87,31 +94,30 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
       return !stage?.is_won && !stage?.is_lost
     })
 
-    const entryTrafficStage = stages.find(
-      (stage) => !stage.is_won && !stage.is_lost && (stage.pipeline ?? 'ambos') !== 'prospeccao'
-    )
+    const touches = withStageTouches(activities, history, stages)
+    const status = new Map(active.map((lead) => [lead.id, conversationStatus(lead, touches, now)]))
 
-    // Lead mandou mensagem e ninguém registrou contato depois disso.
+    // O lead mandou mensagem e é a vez do SDR (verde no funil).
     const waiting = active
-      .filter((lead) => normalizeOrigin(lead.origin) === 'trafego')
+      .filter((lead) => status.get(lead.id)?.kind === 'sua_vez')
       .map((lead) => ({ lead, incoming: new Date(lead.last_message_at ?? lead.created_at).getTime() }))
-      .filter(
-        ({ lead, incoming }) =>
-          now - incoming < WAITING_WINDOW_HOURS * 3600000 && (lastTouch.get(lead.id) ?? 0) < incoming
-      )
+      .filter(({ incoming }) => now - incoming < WAITING_WINDOW_HOURS * 3600000)
       .sort((a, b) => a.incoming - b.incoming)
+    const waitingIds = new Set(waiting.map(({ lead }) => lead.id))
 
     const byNextAction = (a: Lead, b: Lead) =>
       new Date(a.next_action_at!).getTime() - new Date(b.next_action_at!).getTime()
     const byMeeting = (a: Lead, b: Lead) => new Date(a.meeting_at!).getTime() - new Date(b.meeting_at!).getTime()
 
-    const overdue = active
-      .filter((lead) => lead.next_action_at && dueState(lead.next_action_at, now) === 'overdue')
-      .sort(byNextAction)
+    // Faltou na reunião: fica numa lista própria, com Remarcar/Desistiu.
+    const noShows = active.filter((lead) => lead.meeting_status === 'nao_compareceu')
+    const noShowIds = new Set(noShows.map((lead) => lead.id))
 
-    const dueToday = active
-      .filter((lead) => lead.next_action_at && dueState(lead.next_action_at, now) === 'today')
-      .sort(byNextAction)
+    const followUps = active.filter(
+      (lead) => lead.next_action_at && !waitingIds.has(lead.id) && !noShowIds.has(lead.id)
+    )
+    const overdue = followUps.filter((lead) => dueState(lead.next_action_at!, now) === 'overdue').sort(byNextAction)
+    const dueToday = followUps.filter((lead) => dueState(lead.next_action_at!, now) === 'today').sort(byNextAction)
 
     const scheduled = leads.filter((lead) => lead.meeting_at && lead.meeting_status === 'agendada')
 
@@ -123,43 +129,83 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
       .sort(byMeeting)
 
     const meetingsPending = scheduled.filter((lead) => new Date(lead.meeting_at!).getTime() < todayStart).sort(byMeeting)
+    const meetingsTomorrow = scheduled
+      .filter((lead) => {
+        const time = new Date(lead.meeting_at!).getTime()
+        return time >= tomorrowStart && time < tomorrowStart + 86400000
+      })
+      .sort(byMeeting)
     const upcomingMeetings = scheduled
-      .filter((lead) => new Date(lead.meeting_at!).getTime() >= tomorrowStart)
+      .filter((lead) => new Date(lead.meeting_at!).getTime() >= tomorrowStart + 86400000)
       .sort(byMeeting)
 
-    const waitingIds = new Set(waiting.map(({ lead }) => lead.id))
+    // Confirmada = registrou "Confirmou a reunião" depois do último agendamento.
+    const confirmed = new Set<string>()
+    for (const lead of scheduled) {
+      const marks = activities.filter((item) => item.lead_id === lead.id)
+      const lastScheduled = Math.max(
+        0,
+        ...marks
+          .filter((item) => item.type === 'reuniao_marcada' || item.type === 'reuniao_remarcada')
+          .map((item) => new Date(item.created_at).getTime())
+      )
+      if (
+        marks.some((item) => item.type === 'reuniao_confirmada' && new Date(item.created_at).getTime() > lastScheduled)
+      ) {
+        confirmed.add(lead.id)
+      }
+    }
+
+    const entryStage = stages.find((stage) => stage.slug === 'novo-lead')
     const noNextStep = active.filter(
       (lead) =>
         !lead.next_action_at &&
         !(lead.meeting_at && lead.meeting_status === 'agendada') &&
         !waitingIds.has(lead.id) &&
-        lead.stage_id !== entryTrafficStage?.id
+        !noShowIds.has(lead.id) &&
+        lead.stage_id !== entryStage?.id
     )
 
     const myActivitiesToday = activities.filter(
       (item) => item.user_id === userId && new Date(item.created_at).getTime() >= todayStart
     ).length
 
-    // Em "Sem resposta" e já com o número máximo de tentativas: hora de desqualificar.
-    const noReplyLimit = active
-      .filter((lead) => lead.stage_id && stageMap.get(lead.stage_id)?.slug === NO_REPLY_STAGE_SLUG)
-      .map((lead) => ({ lead, attempts: noReplyAttempts(lead, activities) }))
-      .filter(({ attempts }) => attempts >= NO_REPLY_ATTEMPT_LIMIT)
-
     return {
+      status,
       waiting,
       overdue,
       dueToday,
+      noShows,
       meetingsToday,
+      meetingsTomorrow,
       meetingsPending,
       upcomingMeetings,
+      confirmed,
       noNextStep,
-      noReplyLimit,
       myActivitiesToday,
     }
-  }, [leads, stages, stageMap, activities, lastTouch, now, userId])
+  }, [leads, stages, stageMap, activities, history, now, userId])
 
-  async function setMeetingResult(leadId: string, status: 'realizada' | 'nao_compareceu') {
+  // "Mandei mensagem" direto da lista: registra e agenda o próximo follow-up sozinho.
+  async function logMessage(leadId: string) {
+    setSavingAttempt(leadId)
+    const response = await fetch('/api/leads/activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId, type: 'mensagem' }),
+    })
+    const result = await response.json()
+    setSavingAttempt(null)
+
+    if (!response.ok) {
+      alert(result.error || 'Não foi possível registrar.')
+      return
+    }
+
+    router.refresh()
+  }
+
+  async function setMeetingResult(leadId: string, status: 'realizada' | 'nao_compareceu' | 'confirmar') {
     setSavingMeeting(leadId)
     const response = await fetch('/api/leads/meeting', {
       method: 'PATCH',
@@ -242,81 +288,156 @@ export function TodayWorkspace({ userId, role, stages, leads, history, activitie
     )
   }
 
+  function messageButton(lead: Lead, label = 'Mandei mensagem') {
+    return (
+      <button
+        type="button"
+        disabled={savingAttempt === lead.id}
+        onClick={() => logMessage(lead.id)}
+        title="Registra a mensagem e agenda o próximo follow-up"
+        className="flex items-center gap-1.5 rounded-lg border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:border-auron-500/50 hover:text-auron-200 disabled:opacity-50"
+      >
+        <Send className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+        {savingAttempt === lead.id ? 'Salvando…' : label}
+      </button>
+    )
+  }
+
+  // Confirmar reunião: abre o WhatsApp com a mensagem pronta e registra a confirmação.
+  function confirmButton(lead: Lead) {
+    if (groups.confirmed.has(lead.id)) {
+      return <span className="text-xs font-medium text-emerald-300">Confirmada</span>
+    }
+    const url = whatsappUrl(lead.phone, confirmationText(lead, now))
+    return (
+      <>
+        {url && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-whatsapp/40 px-3 py-1.5 text-xs font-medium text-whatsapp transition hover:bg-whatsapp/10"
+          >
+            Mensagem de confirmação
+          </a>
+        )}
+        <button
+          type="button"
+          disabled={savingMeeting === lead.id}
+          onClick={() => setMeetingResult(lead.id, 'confirmar')}
+          className="rounded-lg border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-50"
+        >
+          Confirmou
+        </button>
+      </>
+    )
+  }
+
   function nextActionText(lead: Lead) {
-    return `${dueLabel(lead.next_action_at!, now)}${lead.next_action_note ? ` · ${lead.next_action_note}` : ''}`
+    const status = groups.status.get(lead.id)
+    const due = `${dueLabel(lead.next_action_at!, now)}${lead.next_action_note ? ` · ${lead.next_action_note}` : ''}`
+    return status && status.kind !== 'aguardando' ? `${status.text} · ${due}` : due
+  }
+
+  function followUpTone(lead: Lead, fallback: Tone): Tone {
+    const kind = groups.status.get(lead.id)?.kind
+    if (kind === 'nunca_respondeu') return 'urgent'
+    if (kind === 'parou_de_responder') return 'attention'
+    return fallback
   }
 
   const sections: { key: string; title: string; hint: string; items: ReactNode[] }[] = [
     {
       key: 'waiting',
-      title: 'Esperando resposta',
-      hint: 'Leads do tráfego que mandaram mensagem. Responda e registre na ficha.',
+      title: 'Responder agora',
+      hint: 'O lead mandou mensagem e é a sua vez. Respondeu? Clique em "Respondi".',
       items: groups.waiting.map(({ lead, incoming }) => {
         const message = isTemplateMessage(lead.last_message, templates) ? null : displayMessage(lead.last_message)
         return leadRow(
           lead,
           `${message ? `“${message}” · ` : ''}esperando ${waitingLabel(incoming, now)}`,
-          now - incoming > 15 * 60000 ? 'urgent' : 'attention'
+          now - incoming > 15 * 60000 ? 'urgent' : 'attention',
+          messageButton(lead, 'Respondi')
         )
       }),
     },
     {
       key: 'meetings-today',
       title: 'Reuniões de hoje',
-      hint: 'Depois da reunião, marque o resultado.',
+      hint: 'Confirme antes; depois da reunião, marque o resultado.',
       items: groups.meetingsToday.map((lead) =>
         leadRow(
           lead,
           `Reunião às ${timeOf(lead.meeting_at!)}`,
           'info',
-          new Date(lead.meeting_at!).getTime() <= now ? meetingButtons(lead) : undefined
+          new Date(lead.meeting_at!).getTime() <= now ? meetingButtons(lead) : confirmButton(lead)
         )
       ),
     },
     {
       key: 'meetings-pending',
       title: 'Reuniões sem resultado',
-      hint: 'Já passaram: diga se aconteceram.',
+      hint: 'Já passaram: aconteceu ou faltou?',
       items: groups.meetingsPending.map((lead) =>
         leadRow(lead, `Era ${formatDateTime(lead.meeting_at)}`, 'attention', meetingButtons(lead))
       ),
     },
     {
-      key: 'overdue',
-      title: 'Follow-ups atrasados',
-      hint: 'Faça o contato e marque o próximo passo.',
-      items: groups.overdue.map((lead) => leadRow(lead, nextActionText(lead), 'urgent')),
+      key: 'no-shows',
+      title: 'Faltaram na reunião',
+      hint: 'Chame no WhatsApp e remarque. Na ficha: Remarcar ou Desistiu.',
+      items: groups.noShows.map((lead) => {
+        const status = groups.status.get(lead.id)
+        return leadRow(
+          lead,
+          `${status?.text ?? 'Faltou na reunião'}${lead.meeting_at ? ` · era ${formatDateTime(lead.meeting_at)}` : ''}`,
+          (status?.noShows ?? 0) >= NO_SHOW_LIMIT ? 'urgent' : 'attention',
+          <button
+            type="button"
+            onClick={() => setOpenLeadId(lead.id)}
+            className="rounded-lg border border-yellow-400/40 px-3 py-1.5 text-xs font-medium text-yellow-200 transition hover:bg-yellow-400/10"
+          >
+            Remarcar
+          </button>
+        )
+      }),
     },
     {
-      key: 'no-reply-limit',
-      title: 'Sem resposta: limite de tentativas',
-      hint: `${NO_REPLY_ATTEMPT_LIMIT} tentativas sem retorno. Abra a ficha e desqualifique com "Não respondeu".`,
-      items: groups.noReplyLimit.map(({ lead, attempts }) =>
-        leadRow(lead, `${attempts} tentativas sem resposta`, 'attention')
+      key: 'meetings-tomorrow',
+      title: 'Confirmar reuniões de amanhã',
+      hint: 'Mande a mensagem de confirmação: diminui a chance de o lead faltar.',
+      items: groups.meetingsTomorrow.map((lead) =>
+        leadRow(lead, `Amanhã às ${timeOf(lead.meeting_at!)}`, 'info', confirmButton(lead))
       ),
+    },
+    {
+      key: 'overdue',
+      title: 'Follow-ups atrasados',
+      hint: 'Mandou? Clique em "Mandei mensagem": o próximo follow-up é agendado sozinho.',
+      items: groups.overdue.map((lead) => leadRow(lead, nextActionText(lead), followUpTone(lead, 'urgent'), messageButton(lead))),
     },
     {
       key: 'today',
       title: 'Follow-ups de hoje',
       hint: 'Contatos marcados para hoje.',
-      items: groups.dueToday.map((lead) => leadRow(lead, nextActionText(lead), 'attention')),
+      items: groups.dueToday.map((lead) => leadRow(lead, nextActionText(lead), followUpTone(lead, 'attention'), messageButton(lead))),
     },
     {
       key: 'no-next',
       title: 'Sem próximo passo',
       hint: 'Leads em andamento sem follow-up marcado.',
-      items: groups.noNextStep.map((lead) => leadRow(lead, 'Nenhum próximo contato marcado', 'neutral')),
+      items: groups.noNextStep.map((lead) => leadRow(lead, 'Nenhum próximo contato marcado', 'neutral', messageButton(lead))),
     },
     {
       key: 'upcoming',
       title: 'Próximas reuniões',
-      hint: 'Agendadas a partir de amanhã.',
+      hint: 'Agendadas a partir de depois de amanhã.',
       items: groups.upcomingMeetings.map((lead) => leadRow(lead, formatDateTime(lead.meeting_at), 'neutral')),
     },
   ]
 
   const stats = [
-    { label: 'Esperando resposta', value: groups.waiting.length, urgent: groups.waiting.length > 0 },
+    { label: 'Responder agora', value: groups.waiting.length, urgent: groups.waiting.length > 0 },
     { label: 'Follow-ups atrasados', value: groups.overdue.length, urgent: groups.overdue.length > 0 },
     { label: 'Para hoje', value: groups.dueToday.length + groups.meetingsToday.length, urgent: false },
     { label: 'Suas atividades hoje', value: groups.myActivitiesToday, urgent: false },
