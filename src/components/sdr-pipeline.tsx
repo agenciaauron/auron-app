@@ -28,12 +28,15 @@ import {
 import {
   NO_REPLY_ATTEMPT_LIMIT,
   NO_REPLY_STAGE_SLUG,
+  NO_REPLY_TAGS,
   dueLabel,
   dueState,
   formatDateTime,
   fromLocalInput,
   isManager,
   noReplyAttempts,
+  noReplyTagInfo,
+  type NoReplyTag,
   type TeamMember,
 } from '@/lib/crm'
 import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
@@ -238,6 +241,33 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
     }
   }
 
+  // Cor do "Sem resposta": clicar na cor marcada desmarca.
+  async function setNoReplyTag(leadId: string, tag: NoReplyTag | null) {
+    const lead = localLeads.find((item) => item.id === leadId)
+    if (!lead) return
+    const previous = lead.no_reply_tag
+
+    setLocalLeads((current) => current.map((item) => (item.id === leadId ? { ...item, no_reply_tag: tag } : item)))
+
+    try {
+      const response = await fetch('/api/leads/tag', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, tag }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Não foi possível salvar a cor.')
+      startTransition(() => {
+        router.refresh()
+      })
+    } catch (error) {
+      setLocalLeads((current) =>
+        current.map((item) => (item.id === leadId ? { ...item, no_reply_tag: previous } : item))
+      )
+      alert(error instanceof Error && error.message ? error.message : 'Não foi possível salvar a cor.')
+    }
+  }
+
   function dropHandlers(stageId: string) {
     return {
       onDragOver: (event: DragEvent<HTMLElement>) => {
@@ -327,6 +357,20 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                 )}
               </div>
 
+              {stage.slug === NO_REPLY_STAGE_SLUG && (
+                <div className="mb-2.5 flex flex-wrap gap-x-3 gap-y-1 px-1.5 text-[11px] text-ink-500">
+                  {NO_REPLY_TAGS.map((option) => (
+                    <span key={option.value} className="flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${option.dot}`} aria-hidden />
+                      {option.label}
+                      <span className="tabular text-ink-600">
+                        {stageLeads.filter((lead) => lead.no_reply_tag === option.value).length}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
               <div className="flex-1 space-y-2">
                 {shownLeads.length === 0 && (
                   <div
@@ -347,6 +391,8 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                   const showMessage = !isTemplateMessage(lead.last_message, templates)
                   const active = !stage.is_won && !stage.is_lost
                   const due = active && lead.next_action_at ? dueState(lead.next_action_at, now) : null
+                  const inNoReply = stage.slug === NO_REPLY_STAGE_SLUG
+                  const tag = inNoReply ? noReplyTagInfo(lead.no_reply_tag) : null
 
                   return (
                     <div
@@ -367,9 +413,11 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') setOpenLeadId(lead.id)
                       }}
-                      className={`group relative cursor-pointer rounded-xl border border-ink-800/80 bg-ink-900 py-2.5 pl-3.5 pr-3 transition active:cursor-grabbing ${
-                        isDragging ? 'opacity-40' : 'hover:border-ink-700 hover:bg-[#1b182c]'
-                      } ${isSaving ? 'pointer-events-none opacity-60' : ''}`}
+                      className={`group relative cursor-pointer rounded-xl border bg-ink-900 py-2.5 pl-3.5 pr-3 transition active:cursor-grabbing ${
+                        tag ? tag.card : 'border-ink-800/80'
+                      } ${isDragging ? 'opacity-40' : tag ? 'hover:bg-[#1b182c]' : 'hover:border-ink-700 hover:bg-[#1b182c]'} ${
+                        isSaving ? 'pointer-events-none opacity-60' : ''
+                      }`}
                     >
                       <span className="lead-heat" data-heat={heat} aria-hidden />
 
@@ -420,17 +468,51 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
                         )
                       )}
 
-                      {stage.slug === NO_REPLY_STAGE_SLUG && (() => {
+                      {inNoReply && (() => {
                         const attempts = noReplyAttempts(lead, activities)
                         return (
-                          <p
-                            className={`mt-2 text-[12px] font-medium ${
-                              attempts >= NO_REPLY_ATTEMPT_LIMIT ? 'text-rose-300' : 'text-ink-400'
-                            }`}
-                          >
-                            {attempts} de {NO_REPLY_ATTEMPT_LIMIT} tentativas
-                            {attempts >= NO_REPLY_ATTEMPT_LIMIT && ' · desqualificar?'}
-                          </p>
+                          <>
+                            {tag && (
+                              <p className={`mt-2 inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${tag.chip}`}>
+                                {tag.label}
+                              </p>
+                            )}
+                            <div className="mt-2 flex items-center gap-2.5">
+                              <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Cor do lead">
+                                {NO_REPLY_TAGS.map((option) => {
+                                  const selected = lead.no_reply_tag === option.value
+                                  return (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      draggable={false}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        void setNoReplyTag(lead.id, selected ? null : option.value)
+                                      }}
+                                      onKeyDown={(event) => event.stopPropagation()}
+                                      title={`${option.color}: ${option.label}${selected ? ' (clique para tirar)' : ''}`}
+                                      aria-label={`${option.color}: ${option.label}`}
+                                      aria-pressed={selected}
+                                      className={`h-4 w-4 rounded-full ${option.dot} transition ${
+                                        selected
+                                          ? 'ring-2 ring-ink-50 ring-offset-2 ring-offset-ink-900'
+                                          : 'opacity-35 hover:opacity-100'
+                                      }`}
+                                    />
+                                  )
+                                })}
+                              </div>
+                              <p
+                                className={`text-[12px] font-medium ${
+                                  attempts >= NO_REPLY_ATTEMPT_LIMIT ? 'text-rose-300' : 'text-ink-400'
+                                }`}
+                              >
+                                {attempts} de {NO_REPLY_ATTEMPT_LIMIT} tentativas
+                                {attempts >= NO_REPLY_ATTEMPT_LIMIT && ' · desqualificar?'}
+                              </p>
+                            </div>
+                          </>
                         )
                       })()}
 

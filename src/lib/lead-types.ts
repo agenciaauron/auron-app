@@ -37,6 +37,7 @@ export type Lead = {
   meeting_at: string | null
   meeting_status: string | null
   won_at: string | null
+  no_reply_tag: string | null
 }
 
 export type HistoryItem = {
@@ -61,7 +62,7 @@ export type Activity = {
 export const STAGE_SELECT = 'id, name, slug, position, is_won, is_lost, pipeline'
 
 export const LEAD_SELECT =
-  'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at, last_message, last_message_at, lost_reason, integration_source, ctwa_clid, meta_qualified_sent_at, meta_purchase_sent_at, meta_last_error, meta_last_error_at, origin, sdr_id, next_action_at, next_action_note, meeting_at, meeting_status, won_at'
+  'id, name, phone, email, source, campaign, notes, stage_id, sale_value, created_at, last_message, last_message_at, lost_reason, integration_source, ctwa_clid, meta_qualified_sent_at, meta_purchase_sent_at, meta_last_error, meta_last_error_at, origin, sdr_id, next_action_at, next_action_note, meeting_at, meeting_status, won_at, no_reply_tag'
 
 export const HISTORY_SELECT = 'id, lead_id, user_id, event_type, from_stage_id, to_stage_id, created_at'
 

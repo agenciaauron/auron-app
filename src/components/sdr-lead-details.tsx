@@ -9,6 +9,7 @@ import {
   MEETING_STATUS_LABELS,
   NO_REPLY_ATTEMPT_LIMIT,
   NO_REPLY_STAGE_SLUG,
+  NO_REPLY_TAGS,
   ORIGIN_LABELS,
   QUICK_ACTIVITIES,
   formatDateTime,
@@ -21,6 +22,7 @@ import {
   normalizeOrigin,
   type ActivityType,
   type MeetingStatus,
+  type NoReplyTag,
   type TeamMember,
 } from '@/lib/crm'
 import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
@@ -125,6 +127,33 @@ export function SdrLeadDetails({
   const attempts = inNoReply ? noReplyAttempts(lead, activities) : 0
   const lostStage = stages.find((stage) => stage.is_lost)
   const [disqualifying, setDisqualifying] = useState(false)
+  const [noReplyTag, setNoReplyTag] = useState(lead.no_reply_tag)
+  const [tagSaving, setTagSaving] = useState(false)
+
+  // Cor do "Sem resposta": clicar na cor marcada desmarca.
+  async function chooseNoReplyTag(tag: NoReplyTag) {
+    const next = noReplyTag === tag ? null : tag
+    const previous = noReplyTag
+    setNoReplyTag(next)
+    setTagSaving(true)
+    setError('')
+
+    const response = await fetch('/api/leads/tag', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId: lead.id, tag: next }),
+    })
+    const result = await response.json()
+    setTagSaving(false)
+
+    if (!response.ok) {
+      setNoReplyTag(previous)
+      setError(result.error || 'Não foi possível salvar a cor.')
+      return
+    }
+
+    router.refresh()
+  }
 
   // Atingiu o limite de tentativas em "Sem resposta": desqualifica com "Não respondeu".
   async function disqualifyNoReply() {
@@ -427,6 +456,27 @@ export function SdrLeadDetails({
                 </span>{' '}
                 sem resposta desde a última mensagem do lead.
               </p>
+              <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Cor do lead">
+                {NO_REPLY_TAGS.map((option) => {
+                  const selected = noReplyTag === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => chooseNoReplyTag(option.value)}
+                      disabled={tagSaving}
+                      aria-pressed={selected}
+                      title={selected ? 'Clique para tirar a cor' : `Marcar como ${option.label.toLowerCase()}`}
+                      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition disabled:opacity-60 ${
+                        selected ? `${option.card} ${option.chip}` : 'border-ink-700 text-ink-300 hover:bg-ink-800'
+                      }`}
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${option.dot}`} aria-hidden />
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
               {attempts >= NO_REPLY_ATTEMPT_LIMIT && lostStage && (
                 <button
                   type="button"

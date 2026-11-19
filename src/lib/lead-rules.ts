@@ -83,6 +83,9 @@ export function stageChangeFields({
     fields.won_at = null
   }
 
+  // A cor do "Sem resposta" só vale enquanto o lead está lá.
+  if (stageChanged) fields.no_reply_tag = null
+
   // O SDR que trabalha o lead fica como responsável (é ele quem recebe a comissão).
   if (role === 'sdr' && !lead.sdr_id) {
     fields.sdr_id = userId

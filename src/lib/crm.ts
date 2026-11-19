@@ -74,6 +74,47 @@ export function noReplyAttempts(
   ).length
 }
 
+// Cor que o SDR marca no lead em "Sem resposta" para se organizar.
+export type NoReplyTag = 'nunca_respondeu' | 'parou_de_responder' | 'faltou_reuniao'
+
+export const NO_REPLY_TAGS: {
+  value: NoReplyTag
+  label: string
+  color: string
+  dot: string
+  card: string
+  chip: string
+}[] = [
+  {
+    value: 'nunca_respondeu',
+    label: 'Nunca respondeu',
+    color: 'Vermelho',
+    dot: 'bg-red-500',
+    card: 'border-red-500/70',
+    chip: 'bg-red-500/15 text-red-300',
+  },
+  {
+    value: 'parou_de_responder',
+    label: 'Parou de responder',
+    color: 'Laranja',
+    dot: 'bg-orange-500',
+    card: 'border-orange-500/70',
+    chip: 'bg-orange-500/15 text-orange-300',
+  },
+  {
+    value: 'faltou_reuniao',
+    label: 'Faltou na reunião',
+    color: 'Amarelo',
+    dot: 'bg-yellow-400',
+    card: 'border-yellow-400/70',
+    chip: 'bg-yellow-400/15 text-yellow-200',
+  },
+]
+
+export function noReplyTagInfo(value: string | null | undefined) {
+  return NO_REPLY_TAGS.find((tag) => tag.value === value) ?? null
+}
+
 export const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {
   agendada: 'Agendada',
   realizada: 'Aconteceu',
