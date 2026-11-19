@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
   const { data: lead } = await supabase
     .from('leads')
-    .select('id, sdr_id, stage_id, created_at, last_message_at')
+    .select('id, sdr_id, stage_id, created_at, last_message_at, meeting_status')
     .eq('id', leadId)
     .eq('company_id', companyId)
     .single()
@@ -61,7 +61,8 @@ export async function POST(request: Request) {
     const nextAction = fromLocalInput(nextActionAt)
     leadUpdate.next_action_at = nextAction
     leadUpdate.next_action_note = nextAction ? String(nextActionNote ?? '').trim() || null : null
-  } else if (isAttempt) {
+  } else if (isAttempt && lead.meeting_status !== 'agendada') {
+    // Com reunião agendada a mensagem é combinado/confirmação: não agenda follow-up.
     // Conta as tentativas desde a última mensagem do lead (já com a que acabou de entrar).
     const since = lead.last_message_at ?? lead.created_at
     const { count } = await supabase
