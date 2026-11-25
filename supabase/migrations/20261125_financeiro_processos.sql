@@ -119,3 +119,8 @@ alter table public.finance_recurring_expenses drop constraint if exists finance_
 alter table public.finance_recurring_expenses add constraint finance_recurring_expenses_category_check check (category in (
   'anuncios', 'marketing', 'ferramentas', 'contador', 'imposto', 'combustivel', 'transporte', 'outros', 'salario'
 ));
+
+-- 7. Uma parcela pode ser paga em partes (ex.: entrada + restante).
+alter table public.finance_payments drop constraint if exists finance_payments_client_competence_installment_key;
+create index if not exists finance_payments_client_competence_installment_idx
+  on public.finance_payments (finance_client_id, competence, installment);

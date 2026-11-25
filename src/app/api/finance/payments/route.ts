@@ -45,6 +45,9 @@ export async function POST(request: Request) {
   const notes = String(body.notes || '').trim() || null
   const amount = Number(body.amount)
   const installment = Number(body.installment || 1)
+  // complement = soma ao que já foi pago nessa parcela (ex.: resto depois da entrada).
+  // Sem complement, o registro substitui o que havia (correção).
+  const complement = body.complement === true
 
   if (!financeClientId || !/^\d{4}-\d{2}$/.test(competence) || !/^\d{4}-\d{2}-\d{2}$/.test(paidAt) || !Number.isFinite(amount) || amount < 0 || ![1, 2].includes(installment)) {
     return NextResponse.json({ error: 'Dados do pagamento inválidos.' }, { status: 400 })
@@ -69,9 +72,22 @@ export async function POST(request: Request) {
   const dueDay = installment === 2 ? Number(financeClient.second_due_day) : Number(financeClient.due_day)
   const dueDate = dueDateForCompetence(competence, dueDay)
 
+  if (!complement) {
+    const { error: deleteError } = await supabase
+      .from('finance_payments')
+      .delete()
+      .eq('company_id', membership.company_id)
+      .eq('finance_client_id', financeClientId)
+      .eq('competence', competenceDate)
+      .eq('installment', installment)
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message }, { status: 500 })
+    }
+  }
+
   const { error } = await supabase
     .from('finance_payments')
-    .upsert({
+    .insert({
       company_id: membership.company_id,
       finance_client_id: financeClientId,
       competence: competenceDate,
@@ -81,7 +97,7 @@ export async function POST(request: Request) {
       installment,
       payment_method: paymentMethod,
       notes,
-    }, { onConflict: 'finance_client_id,competence,installment' })
+    })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

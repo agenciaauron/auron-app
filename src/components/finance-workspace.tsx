@@ -203,6 +203,8 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
   const [modalCycle, setModalCycle] = useState<'monthly' | 'biweekly'>('monthly')
   const [modalDueDay, setModalDueDay] = useState('')
   const [modalStart, setModalStart] = useState('')
+  const [payInstallment, setPayInstallment] = useState(1)
+  const [payCompetence, setPayCompetence] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -238,15 +240,19 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
 
     for (const client of activeClients) {
       for (const installment of installmentsFor(client)) {
-        const paid = monthPayments.some(
-          (payment) =>
-            payment.finance_client_id === client.id &&
-            (payment.installment ?? 1) === installment.number
-        )
-        if (paid) continue
+        // Pagamento parcial (ex.: só a entrada) continua devendo a diferença.
+        const paid = monthPayments
+          .filter(
+            (payment) =>
+              payment.finance_client_id === client.id &&
+              (payment.installment ?? 1) === installment.number
+          )
+          .reduce((sum, payment) => sum + Number(payment.amount), 0)
+        const missing = installment.amount - paid
+        if (missing <= 0.009) continue
 
-        receivable += installment.amount
-        if (installment.dueDate < today) {
+        receivable += missing
+        if (installment.dueDate < today && paid === 0) {
           overdue += installment.amount
         }
       }
@@ -255,16 +261,28 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
     return { recurring, received, receivable, overdue }
   }, [activeClients, cashThisMonth, monthPayments, today])
 
-  function paymentFor(clientId: string, installment: number) {
-    return monthPayments.find(
-      (payment) =>
-        payment.finance_client_id === clientId && (payment.installment ?? 1) === installment
-    )
+  // Quanto já entrou numa parcela de uma competência qualquer ("2026-11").
+  function paidIn(clientId: string, comp: string, installment: number) {
+    return payments
+      .filter(
+        (payment) =>
+          payment.finance_client_id === clientId &&
+          competenceDate(payment.competence) === comp &&
+          (payment.installment ?? 1) === installment
+      )
+      .reduce((sum, payment) => sum + Number(payment.amount), 0)
+  }
+
+  // Quanto já entrou numa parcela do mês (pode ser parcial, ex.: só a entrada).
+  function paidFor(clientId: string, installment: number) {
+    return monthPayments
+      .filter((payment) => payment.finance_client_id === clientId && (payment.installment ?? 1) === installment)
+      .reduce((sum, payment) => sum + Number(payment.amount), 0)
   }
 
   function pendingInstallments(client: FinanceClient) {
     return installmentsFor(client)
-      .filter((installment) => !paymentFor(client.id, installment.number))
+      .filter((installment) => paidFor(client.id, installment.number) < installment.amount - 0.009)
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
   }
 
@@ -305,6 +323,14 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
     }
 
     const next = pending[0]
+    const partial = paidFor(client.id, next.number)
+    if (partial > 0) {
+      return {
+        label: `Falta ${money(next.amount - partial)}`,
+        className: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+        detail: `Pagou ${money(partial)} de ${money(next.amount)}${isBiweekly(client) ? ` · ${next.number}ª quinzena` : ''}`,
+      }
+    }
     const difference = daysBetween(next.dueDate, today)
     const installmentsThisMonth = installmentsFor(client).length
     const detail = isBiweekly(client)
@@ -392,6 +418,13 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
     router.refresh()
   }
 
+  function openPaymentModal(client: FinanceClient) {
+    setError('')
+    setPayCompetence(competence)
+    setPayInstallment(pendingInstallments(client)[0]?.number ?? 1)
+    setPaymentClient(client)
+  }
+
   async function savePayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!paymentClient) return
@@ -399,6 +432,7 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
     setLoading(true)
     setError('')
     const form = new FormData(event.currentTarget)
+    const alreadyPaid = paidIn(paymentClient.id, payCompetence, payInstallment)
 
     const response = await fetch('/api/finance/payments', {
       method: 'POST',
@@ -408,9 +442,10 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
         competence: form.get('competence'),
         paidAt: form.get('paidAt'),
         amount: form.get('amount'),
-        installment: form.get('installment') ?? 1,
+        installment: payInstallment,
         paymentMethod: form.get('paymentMethod'),
         notes: form.get('notes'),
+        complement: alreadyPaid > 0 && form.get('mode') !== 'replace',
       }),
     })
 
@@ -565,8 +600,7 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
                         <button
                           type="button"
                           onClick={() => {
-                            setError('')
-                            setPaymentClient(client)
+                            openPaymentModal(client)
                           }}
                           className="rounded-lg border border-ink-700 px-3 py-2 text-xs text-ink-300 transition hover:bg-ink-800"
                         >
@@ -681,8 +715,7 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
                           <button
                             type="button"
                             onClick={() => {
-                              setError('')
-                              setPaymentClient(client)
+                              openPaymentModal(client)
                             }}
                             className="rounded-lg bg-auron-600/15 px-3 py-2 text-xs font-medium text-auron-300 transition hover:bg-auron-600/25"
                           >
@@ -932,18 +965,39 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
             </div>
 
             <form onSubmit={savePayment} className="space-y-4">
+              {(() => {
+                const paidNow = paidIn(paymentClient.id, payCompetence, payInstallment)
+                const expected = Number(paymentClient.monthly_amount)
+                if (!paidNow) return null
+                return (
+                  <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2.5 text-xs text-amber-200">
+                    {paidNow >= expected - 0.009
+                      ? `Essa parcela já está paga (${money(paidNow)}).`
+                      : `Já pagou ${money(paidNow)} de ${money(expected)}. O valor abaixo soma ao que já foi pago (falta ${money(expected - paidNow)}).`}
+                    <label className="mt-2 flex items-center gap-2 text-ink-300">
+                      <input type="checkbox" name="mode" value="replace" />
+                      Substituir o que foi lançado (corrigir)
+                    </label>
+                  </div>
+                )
+              })()}
               {isBiweekly(paymentClient) && (
                 <label className="block text-xs text-ink-500">
                   <span className="mb-1.5 block">Quinzena</span>
                   <select
                     name="installment"
-                    defaultValue={pendingInstallments(paymentClient)[0]?.number ?? 1}
+                    value={payInstallment}
+                    onChange={(event) => setPayInstallment(Number(event.target.value))}
                     className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none"
                   >
                     {installmentsFor(paymentClient, true).map((installment) => (
                       <option key={installment.number} value={installment.number}>
                         {installment.number}ª quinzena · vence dia {pad(installment.dueDay)}
-                        {paymentFor(paymentClient.id, installment.number) ? ' (já paga)' : ''}
+                        {(() => {
+                          const paidNow = paidIn(paymentClient.id, payCompetence, installment.number)
+                          if (!paidNow) return ''
+                          return paidNow >= installment.amount - 0.009 ? ' (já paga)' : ` (pagou ${money(paidNow)})`
+                        })()}
                       </option>
                     ))}
                   </select>
@@ -957,7 +1011,8 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
                     name="competence"
                     type="month"
                     required
-                    defaultValue={competence}
+                    value={payCompetence}
+                    onChange={(event) => setPayCompetence(event.target.value)}
                     className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none"
                   />
                 </label>
@@ -978,12 +1033,16 @@ export function FinanceWorkspace({ clients, payments, financeReady, expenses, re
                 <label className="text-xs text-ink-500">
                   <span className="mb-1.5 block">Valor recebido</span>
                   <input
+                    key={`amount-${payCompetence}-${payInstallment}`}
                     name="amount"
                     type="number"
                     step="0.01"
                     min="0"
                     required
-                    defaultValue={Number(paymentClient.monthly_amount)}
+                    defaultValue={Math.max(
+                      Number(paymentClient.monthly_amount) - paidIn(paymentClient.id, payCompetence, payInstallment),
+                      0
+                    ) || Number(paymentClient.monthly_amount)}
                     className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none"
                   />
                 </label>
