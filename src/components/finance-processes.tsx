@@ -57,10 +57,10 @@ function Stat({ label, value, hint, tone }: { label: string; value: string; hint
   )
 }
 
-function Line({ label, value, sign, strong, note }: { label: string; value: number; sign?: '-' | '+'; strong?: boolean; note?: string }) {
+function Line({ label, value, sign, strong, note, sub }: { label: string; value: number; sign?: '-' | '+'; strong?: boolean; note?: string; sub?: boolean }) {
   return (
-    <div className={`flex items-baseline justify-between gap-4 py-2 ${strong ? 'border-t border-ink-800 pt-3' : ''}`}>
-      <span className={strong ? 'font-semibold text-ink-100' : 'text-ink-400'}>
+    <div className={`flex items-baseline justify-between gap-4 ${sub ? 'py-1 pl-4 text-xs' : 'py-2'} ${strong ? 'border-t border-ink-800 pt-3' : ''}`}>
+      <span className={strong ? 'font-semibold text-ink-100' : sub ? 'text-ink-500' : 'text-ink-400'}>
         {label}
         {note && <span className="ml-2 text-xs text-amber-300">{note}</span>}
       </span>
@@ -91,7 +91,8 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
   const plan = useMemo(() => planGoals(data, profitGoal, thisMonth), [data, profitGoal, thisMonth])
 
   const traffic = summary.channels.find((row) => row.channel === 'trafego')!
-  const trafficReturn = ratio(traffic.revenue, traffic.investment)
+  // Retorno do mês = o que os clientes NOVOS já pagaram ÷ o que foi investido para trazê-los.
+  const trafficReturn = ratio(traffic.newRevenue, traffic.investment)
   const positive = summary.profit >= 0
   const visibleChannels = summary.channels.filter(
     (row) => row.channel === 'trafego' || row.revenue > 0 || row.investment > 0 || row.newClients.length > 0 || lifetime.some((item) => item.channel === row.channel && item.clients > 0)
@@ -199,6 +200,8 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
           <h2 className="font-semibold text-ink-100">Resultado de {monthName(month)}</h2>
           <div className="mt-3 text-sm">
             <Line label="Receita (o que entrou dos clientes)" value={summary.revenue} />
+            <Line sub label="Clientes novos do mês" value={summary.newRevenue} />
+            <Line sub label="Recorrência (clientes de meses anteriores)" value={summary.recurringRevenue} />
             <Line label="Investimento nos processos" value={summary.investment} sign="-" />
             <Line label="Custos fixos" value={summary.fixed} sign="-" />
             <Line
@@ -254,12 +257,21 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
             <Stat label="Investido no mês" value={money(traffic.investment)} hint={`Meta ${money(traffic.ads)} · comissão ${money(traffic.commission)}`} />
             <Stat label="Clientes novos" value={String(traffic.newClients.length)} hint={traffic.newClients.join(', ') || 'nenhum no mês'} />
             <Stat label="CAC (custo por cliente)" value={money(traffic.cac)} />
-            <Stat label="Receita do tráfego no mês" value={money(traffic.revenue)} hint={`${traffic.payingClients} clientes pagaram`} />
+            <Stat
+              label="Entrou dos clientes novos"
+              value={money(traffic.newRevenue)}
+              hint={`1º pagamento dos ${traffic.newClients.length} que entraram no mês`}
+            />
             <Stat
               label="Cada R$ 1 investido voltou"
               value={trafficReturn === null ? '—' : `R$ ${trafficReturn.toFixed(2).replace('.', ',')}`}
               tone={trafficReturn === null ? undefined : trafficReturn >= 1 ? 'good' : 'bad'}
-              hint="receita do mês ÷ investimento do mês"
+              hint="só com os novos, no 1º mês; cresce a cada mês que eles ficam"
+            />
+            <Stat
+              label="Recorrência do tráfego"
+              value={money(traffic.recurringRevenue)}
+              hint={`${traffic.recurringClients} clientes de meses anteriores pagaram`}
             />
             <Stat
               label="Resultado do tráfego"
@@ -295,7 +307,8 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
               </div>
               <p className="mt-0.5 text-[11px] text-ink-500">{CHANNEL_HINTS[row.channel]}</p>
               <dl className="mt-3 space-y-1.5 text-sm">
-                <div className="flex justify-between"><dt className="text-ink-500">Receita</dt><dd className="tabular text-ink-200">{money(row.revenue)}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink-500">Entrou dos novos</dt><dd className="tabular text-ink-200">{money(row.newRevenue)}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink-500">Recorrência</dt><dd className="tabular text-ink-200">{money(row.recurringRevenue)}</dd></div>
                 <div className="flex justify-between"><dt className="text-ink-500">Investimento</dt><dd className="tabular text-ink-200">{money(row.investment)}</dd></div>
                 <div className="flex justify-between"><dt className="text-ink-500">Clientes novos</dt><dd className="tabular text-ink-200">{row.newClients.length}</dd></div>
                 <div className="flex justify-between"><dt className="text-ink-500">CAC</dt><dd className="tabular text-ink-200">{row.newClients.length ? money(row.cac) : '—'}</dd></div>
@@ -464,11 +477,13 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
           <h2 className="font-semibold text-ink-100">Mês a mês</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="mt-3 w-full min-w-[860px] text-left text-sm">
+          <table className="mt-3 w-full min-w-[1040px] text-left text-sm">
             <thead className="border-y border-ink-800 text-xs uppercase tracking-wide text-ink-600">
               <tr>
                 <th className="px-5 py-3 font-medium">Mês</th>
-                <th className="px-5 py-3 text-right font-medium">Receita</th>
+                <th className="px-5 py-3 text-right font-medium">Novos (R$)</th>
+                <th className="px-5 py-3 text-right font-medium">Recorrência</th>
+                <th className="px-5 py-3 text-right font-medium">Receita total</th>
                 <th className="px-5 py-3 text-right font-medium">Processos</th>
                 <th className="px-5 py-3 text-right font-medium">Fixos</th>
                 <th className="px-5 py-3 text-right font-medium">Imposto</th>
@@ -487,7 +502,9 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
                   className={`cursor-pointer transition hover:bg-ink-900/80 ${item.month === month ? 'bg-ink-900/70' : ''}`}
                 >
                   <td className="px-5 py-3 font-medium text-ink-200">{monthName(item.month)}</td>
-                  <td className="px-5 py-3 text-right tabular text-ink-300">{money(item.revenue)}</td>
+                  <td className="px-5 py-3 text-right tabular text-ink-300">{money(item.newRevenue)}</td>
+                  <td className="px-5 py-3 text-right tabular text-ink-300">{money(item.recurringRevenue)}</td>
+                  <td className="px-5 py-3 text-right tabular text-ink-200">{money(item.revenue)}</td>
                   <td className="px-5 py-3 text-right tabular text-ink-300">{money(item.investment)}</td>
                   <td className="px-5 py-3 text-right tabular text-ink-300">{money(item.fixed)}</td>
                   <td className="px-5 py-3 text-right tabular text-ink-300">

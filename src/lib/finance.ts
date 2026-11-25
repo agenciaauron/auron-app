@@ -198,6 +198,9 @@ function channelOfSale(sale: PanelSale): FinanceChannel {
 export type ChannelMonth = {
   channel: FinanceChannel
   revenue: number
+  newRevenue: number // o que entrou de clientes que começaram neste mês
+  recurringRevenue: number // mensalidade de clientes de meses anteriores
+  recurringClients: number
   ads: number // recargas da Meta
   marketing: number // outros gastos do processo (conteúdo, seguidores...)
   commission: number // comissão do SDR (calculada)
@@ -214,6 +217,8 @@ export type MonthSummary = {
   channels: ChannelMonth[]
   unassignedRevenue: number
   revenue: number
+  newRevenue: number
+  recurringRevenue: number
   investment: number
   fixedItems: { label: string; amount: number; recurring: boolean }[]
   fixed: number
@@ -250,6 +255,9 @@ export function summarizeMonth(data: PanelData, month: string): MonthSummary {
       {
         channel,
         revenue: 0,
+        newRevenue: 0,
+        recurringRevenue: 0,
+        recurringClients: 0,
         ads: 0,
         marketing: 0,
         commission: 0,
@@ -264,17 +272,29 @@ export function summarizeMonth(data: PanelData, month: string): MonthSummary {
   )
 
   let unassignedRevenue = 0
+  let unassignedNew = 0
   const paying = new Map<FinanceChannel, Set<string>>(FINANCE_CHANNELS.map((channel) => [channel, new Set()]))
+  const payingOld = new Map<FinanceChannel, Set<string>>(FINANCE_CHANNELS.map((channel) => [channel, new Set()]))
   for (const payment of data.payments) {
     if (monthOf(payment.paid_at) !== month) continue
     const client = clientById.get(payment.finance_client_id)
     const amount = Number(payment.amount)
+    const isNew = monthOf(firstPayment.get(payment.finance_client_id) ?? payment.paid_at) === month
     if (!client?.channel) {
       unassignedRevenue += amount
+      if (isNew) unassignedNew += amount
       continue
     }
-    channels.get(client.channel)!.revenue += amount
+    const row = channels.get(client.channel)!
+    row.revenue += amount
     paying.get(client.channel)!.add(client.id)
+    // Novo = o primeiro pagamento do cliente foi neste mês. O resto é recorrência.
+    if (isNew) {
+      row.newRevenue += amount
+    } else {
+      row.recurringRevenue += amount
+      payingOld.get(client.channel)!.add(client.id)
+    }
   }
 
   for (const client of data.clients) {
@@ -367,6 +387,7 @@ export function summarizeMonth(data: PanelData, month: string): MonthSummary {
   const rows = FINANCE_CHANNELS.map((channel) => {
     const row = channels.get(channel)!
     row.payingClients = paying.get(channel)!.size
+    row.recurringClients = payingOld.get(channel)!.size
     row.investment = row.ads + row.marketing + row.commission
     row.cac = row.newClients.length > 0 ? row.investment / row.newClients.length : null
     row.result = row.revenue - row.investment
@@ -374,6 +395,7 @@ export function summarizeMonth(data: PanelData, month: string): MonthSummary {
   })
 
   const revenue = rows.reduce((sum, row) => sum + row.revenue, 0) + unassignedRevenue
+  const newRevenue = rows.reduce((sum, row) => sum + row.newRevenue, 0) + unassignedNew
   const investment = rows.reduce((sum, row) => sum + row.investment, 0)
   const fixed = fixedItems.reduce((sum, item) => sum + item.amount, 0)
   const profit = revenue - investment - fixed - tax
@@ -383,6 +405,8 @@ export function summarizeMonth(data: PanelData, month: string): MonthSummary {
     channels: rows,
     unassignedRevenue,
     revenue,
+    newRevenue,
+    recurringRevenue: revenue - newRevenue,
     investment,
     fixedItems: fixedItems.sort((a, b) => b.amount - a.amount),
     fixed,
