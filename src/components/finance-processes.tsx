@@ -185,7 +185,7 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
         </span>
       </div>
 
-      {!summary.taxNoted && (
+      {!summary.taxNoted && !summary.taxNotDue && (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3 text-sm text-amber-200">
           {summary.taxPending
             ? `O imposto de ${monthName(month)} é pago em ${monthName(shiftMonth(month, 1)).split(' ')[0].toLowerCase()}: até lá o lucro abaixo está sem imposto. Quando pagar o DAS, anote em Gastos.`
@@ -205,7 +205,7 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
               label={summary.taxNoted ? `Imposto (DAS pago em ${monthName(shiftMonth(month, 1)).split(' ')[0].toLowerCase()})` : 'Imposto'}
               value={summary.tax}
               sign="-"
-              note={summary.taxNoted ? undefined : summary.taxPending ? 'pago no mês seguinte' : 'não anotado'}
+              note={summary.taxNoted || summary.taxNotDue ? undefined : summary.taxPending ? 'pago no mês seguinte' : 'não anotado'}
             />
             <Line label="Lucro do mês" value={summary.profit} strong />
             {summary.withdrawalsPending ? (
@@ -493,6 +493,8 @@ export function FinanceProcesses({ data, leads, meetings, team, profitGoal }: Pr
                   <td className="px-5 py-3 text-right tabular text-ink-300">
                     {item.taxNoted ? (
                       money(item.tax)
+                    ) : item.taxNotDue ? (
+                      <span className="text-ink-500">—</span>
                     ) : item.taxPending ? (
                       <span className="text-xs text-ink-500">mês seguinte</span>
                     ) : (

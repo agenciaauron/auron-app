@@ -221,6 +221,7 @@ export type MonthSummary = {
   tax: number
   taxNoted: boolean
   taxPending: boolean // o imposto deste mês só é pago no mês seguinte, que ainda não chegou
+  taxNotDue: boolean // antes do primeiro DAS: não havia imposto a pagar (confirmado pela contabilidade)
   profit: number
   withdrawals: number // retirada referente a este mês (feita no mês seguinte)
   withdrawalsPending: boolean // a retirada deste mês ainda não aconteceu
@@ -294,6 +295,12 @@ export function summarizeMonth(data: PanelData, month: string): MonthSummary {
   const tax = taxExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
   const taxNoted = taxExpenses.length > 0
   const taxPending = !taxNoted && shiftMonth(month, 1) >= currentMonthKey()
+  // Fev–jun/2026 não tinham imposto a pagar (Rafael, 25/11): antes do primeiro DAS, não é "não anotado".
+  const firstTaxMonth = data.expenses
+    .filter((expense) => expense.category === 'imposto')
+    .map((expense) => shiftMonth(monthOf(expense.spent_at), -1))
+    .sort()[0]
+  const taxNotDue = !taxNoted && !!firstTaxMonth && month < firstTaxMonth
   // Retirada referente ao mês = a que foi feita no mês seguinte (dia 10).
   const nextMonth = shiftMonth(month, 1)
   const withdrawalExpenses = data.expenses.filter(
@@ -383,6 +390,7 @@ export function summarizeMonth(data: PanelData, month: string): MonthSummary {
     tax,
     taxNoted,
     taxPending,
+    taxNotDue,
     profit,
     withdrawals,
     withdrawalsPending,
