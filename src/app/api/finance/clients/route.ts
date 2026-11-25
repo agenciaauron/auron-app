@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireApiContext } from '@/lib/crm-context'
+import { isFinanceChannel } from '@/lib/finance'
 
 const validStatuses = new Set(['active', 'paused', 'cancelled'])
 const validCycles = new Set(['monthly', 'biweekly'])
@@ -67,6 +68,11 @@ export async function POST(request: Request) {
   const monthlyAmount = Number(body.monthlyAmount)
   const dueDay = Number(body.dueDay)
   const notes = String(body.notes || '').trim() || null
+  const channel = body.channel
+
+  if (!isFinanceChannel(channel)) {
+    return NextResponse.json({ error: 'Escolha de qual processo o cliente veio.' }, { status: 400 })
+  }
 
   if (!name || !Number.isFinite(monthlyAmount) || monthlyAmount < 0 || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
     return NextResponse.json({ error: 'Preencha nome, valor e dia de vencimento corretamente.' }, { status: 400 })
@@ -90,6 +96,7 @@ export async function POST(request: Request) {
     ...billing,
     ...(billingStart ? { billing_start: billingStart } : {}),
     notes,
+    channel,
     status: 'active',
   })
 
@@ -118,6 +125,11 @@ export async function PATCH(request: Request) {
   const dueDay = Number(body.dueDay)
   const status = String(body.status || 'active')
   const notes = String(body.notes || '').trim() || null
+  const channel = body.channel
+
+  if (!isFinanceChannel(channel)) {
+    return NextResponse.json({ error: 'Escolha de qual processo o cliente veio.' }, { status: 400 })
+  }
 
   if (!clientId || !name || !Number.isFinite(monthlyAmount) || monthlyAmount < 0 || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31 || !validStatuses.has(status)) {
     return NextResponse.json({ error: 'Dados inválidos.' }, { status: 400 })
@@ -143,6 +155,7 @@ export async function PATCH(request: Request) {
       ...(billingStart ? { billing_start: billingStart } : {}),
       status,
       notes,
+      channel,
       updated_at: new Date().toISOString(),
     })
     .eq('id', clientId)

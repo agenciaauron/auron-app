@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CHANNEL_LABELS, FINANCE_CHANNELS, type FinanceChannel } from '@/lib/finance'
 
 type FinanceClient = {
   id: string
@@ -13,6 +14,8 @@ type FinanceClient = {
   billing_start: string | null
   status: 'active' | 'paused' | 'cancelled'
   notes: string | null
+  channel: FinanceChannel | null
+  ended_at: string | null
   created_at: string
   updated_at: string
 }
@@ -182,6 +185,10 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
   today.setHours(0, 0, 0, 0)
 
   const activeClients = clients.filter((client) => client.status === 'active')
+  // Quem saiu (cancelado) não aparece na lista: fica guardado só para os relatórios.
+  const listedClients = clients
+    .filter((client) => client.status !== 'cancelled')
+    .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name, 'pt-BR') : a.status === 'active' ? -1 : 1))
   const monthPayments = payments.filter((payment) => competenceDate(payment.competence) === competence)
   const cashThisMonth = payments.filter((payment) => payment.paid_at.slice(0, 7) === competence)
 
@@ -331,6 +338,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
         secondDueDay: modalCycle === 'biweekly' ? form.get('secondDueDay') : null,
         status: editing ? form.get('status') : 'active',
         notes: form.get('notes'),
+        channel: form.get('channel'),
       }),
     })
 
@@ -577,6 +585,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
               <thead className="border-b border-ink-800 text-xs uppercase tracking-wide text-ink-600">
                 <tr>
                   <th className="px-5 py-4 font-medium">Cliente</th>
+                  <th className="px-5 py-4 font-medium">Processo</th>
                   <th className="px-5 py-4 font-medium">Mensalidade</th>
                   <th className="px-5 py-4 font-medium">Vencimento</th>
                   <th className="px-5 py-4 font-medium">Status do mês</th>
@@ -586,7 +595,7 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-800/80">
-                {clients.map((client) => {
+                {listedClients.map((client) => {
                   const status = billingStatus(client)
                   const last = lastPayment(client.id)
 
@@ -595,6 +604,9 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                       <td className="px-5 py-4">
                         <p className="font-medium text-ink-200">{client.name}</p>
                         {client.notes && <p className="mt-1 max-w-[240px] truncate text-xs text-ink-600">{client.notes}</p>}
+                      </td>
+                      <td className="px-5 py-4 text-ink-400">
+                        {client.channel ? CHANNEL_LABELS[client.channel] : <span className="text-amber-300">Definir</span>}
                       </td>
                       <td className="px-5 py-4">
                         <p className="font-medium tabular text-ink-300">{money(monthlyValue(client))}</p>
@@ -662,9 +674,9 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                   )
                 })}
 
-                {clients.length === 0 && (
+                {listedClients.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-14 text-center text-ink-600">
+                    <td colSpan={8} className="px-5 py-14 text-center text-ink-600">
                       Nenhum cliente financeiro cadastrado ainda.
                     </td>
                   </tr>
@@ -712,6 +724,25 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                 placeholder="Nome do cliente"
                 className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 outline-none focus:border-auron-500"
               />
+
+              <label className="block text-xs text-ink-500">
+                <span className="mb-1.5 block">De qual processo o cliente veio?</span>
+                <select
+                  name="channel"
+                  required
+                  defaultValue={clientModal === 'new' ? '' : clientModal.channel ?? ''}
+                  className="w-full rounded-lg border border-ink-700 bg-ink-950 px-4 py-3 text-sm text-ink-200 outline-none focus:border-auron-500"
+                >
+                  <option value="" disabled>
+                    Escolha o processo
+                  </option>
+                  {FINANCE_CHANNELS.map((channel) => (
+                    <option key={channel} value={channel}>
+                      {CHANNEL_LABELS[channel]}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               <div>
                 <span className="mb-1.5 block text-xs text-ink-500">Cobrança</span>
@@ -823,8 +854,11 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
                   >
                     <option value="active">Ativo</option>
                     <option value="paused">Pausado</option>
-                    <option value="cancelled">Cancelado</option>
+                    <option value="cancelled">Saiu (cancelado)</option>
                   </select>
+                  <span className="mt-1.5 block text-ink-600">
+                    Quem saiu some da lista, mas continua contando nos resultados por processo.
+                  </span>
                 </label>
               )}
 
