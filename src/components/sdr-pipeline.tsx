@@ -38,6 +38,7 @@ import {
   formatDateTime,
   fromLocalInput,
   isManager,
+  isMeetingStage,
   withStageTouches,
   type ConversationKind,
   type TeamMember,
@@ -395,9 +396,15 @@ export function SdrPipeline({ stages, leads, allLeads, history, activities, team
           const showOlder = expandedStages.has(stage.id)
           const unsortedLeads = showOlder ? [...recentLeads, ...olderLeads] : recentLeads
           // Em conversa: agrupado pela cor do selo (a ordem dentro de cada cor continua a mesma).
+          // Reunião: pela data da reunião, da mais antiga para a mais nova (quem faltou e precisa
+          // reagendar fica em cima, depois as próximas). Sem data marcada vai para o fim.
+          const meetingTime = (lead: Lead) =>
+            lead.meeting_at ? new Date(lead.meeting_at).getTime() : Number.POSITIVE_INFINITY
           const shownLeads = isConversation
             ? [...unsortedLeads].sort((a, b) => (statusRank.get(a.id) ?? 99) - (statusRank.get(b.id) ?? 99))
-            : unsortedLeads
+            : isMeetingStage(stage)
+              ? [...unsortedLeads].sort((a, b) => meetingTime(a) - meetingTime(b))
+              : unsortedLeads
 
           return (
             <section
