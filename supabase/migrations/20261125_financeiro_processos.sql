@@ -108,3 +108,14 @@ begin
       t || '_manager', t);
   end loop;
 end $$;
+
+-- 6. Salário / fixo da equipe (SDR Miguel: R$ 2.000 todo dia 5, referente ao período anterior).
+alter table public.finance_expenses drop constraint if exists finance_expenses_category_check;
+alter table public.finance_expenses add constraint finance_expenses_category_check check (category in (
+  'anuncios', 'marketing', 'ferramentas', 'contador', 'imposto', 'combustivel', 'transporte', 'outros', 'salario',
+  'retirada', 'reserva', 'devolucao'
+));
+alter table public.finance_recurring_expenses drop constraint if exists finance_recurring_expenses_category_check;
+alter table public.finance_recurring_expenses add constraint finance_recurring_expenses_category_check check (category in (
+  'anuncios', 'marketing', 'ferramentas', 'contador', 'imposto', 'combustivel', 'transporte', 'outros', 'salario'
+));

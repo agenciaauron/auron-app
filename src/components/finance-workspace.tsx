@@ -2,7 +2,17 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CHANNEL_LABELS, FINANCE_CHANNELS, type FinanceChannel } from '@/lib/finance'
+import { FinanceExpenses } from '@/components/finance-expenses'
+import { FinanceProcesses } from '@/components/finance-processes'
+import {
+  CHANNEL_LABELS,
+  FINANCE_CHANNELS,
+  type FinanceChannel,
+  type PanelExpense,
+  type PanelMeeting,
+  type PanelRecurring,
+} from '@/lib/finance'
+import type { TeamMember } from '@/lib/crm'
 
 type FinanceClient = {
   id: string
@@ -33,13 +43,29 @@ type FinancePayment = {
   created_at: string
 }
 
+type FinanceLead = {
+  id: string
+  name: string
+  origin: string | null
+  sdr_id: string | null
+  sale_value: number | string | null
+  won_at: string | null
+  created_at: string
+}
+
 type Props = {
   clients: FinanceClient[]
   payments: FinancePayment[]
   financeReady: boolean
+  expenses: PanelExpense[]
+  recurring: PanelRecurring[]
+  profitGoal: number | null
+  leads: FinanceLead[]
+  meetings: PanelMeeting[]
+  team: TeamMember[]
 }
 
-type Tab = 'overview' | 'clients' | 'ads' | 'expenses'
+type Tab = 'overview' | 'processes' | 'clients' | 'expenses'
 
 function money(value: number | string) {
   return Number(value).toLocaleString('pt-BR', {
@@ -168,7 +194,7 @@ function amountLabel(client: FinanceClient) {
     : money(client.monthly_amount)
 }
 
-export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
+export function FinanceWorkspace({ clients, payments, financeReady, expenses, recurring, profitGoal, leads, meetings, team }: Props) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('overview')
   const [clientModal, setClientModal] = useState<FinanceClient | 'new' | null>(null)
@@ -185,6 +211,17 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
   today.setHours(0, 0, 0, 0)
 
   const activeClients = clients.filter((client) => client.status === 'active')
+  // Dados do painel de processos (inclui quem já saiu).
+  const panelData = useMemo(
+    () => ({
+      clients,
+      payments,
+      expenses,
+      recurring,
+      sales: leads.filter((lead) => lead.won_at),
+    }),
+    [clients, payments, expenses, recurring, leads]
+  )
   // Quem saiu (cancelado) não aparece na lista: fica guardado só para os relatórios.
   const listedClients = clients
     .filter((client) => client.status !== 'cancelled')
@@ -417,9 +454,9 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: 'Visão geral' },
+    { key: 'processes', label: 'Processos e resultado' },
     { key: 'clients', label: 'Clientes' },
-    { key: 'ads', label: 'Anúncios' },
-    { key: 'expenses', label: 'Despesas' },
+    { key: 'expenses', label: 'Gastos' },
   ]
 
   if (!financeReady) {
@@ -687,19 +724,17 @@ export function FinanceWorkspace({ clients, payments, financeReady }: Props) {
         </section>
       )}
 
-      {(tab === 'ads' || tab === 'expenses') && (
-        <div className="rounded-2xl border border-ink-800 bg-ink-900/45 p-8">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-auron-400">
-            {tab === 'ads' ? 'Investimentos em anúncios' : 'Despesas da empresa'}
-          </p>
-          <h2 className="mt-2 font-display text-2xl font-semibold">
-            {tab === 'ads' ? 'Controle de verba dos clientes' : 'Gastos e contas a pagar'}
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-500">
-            A estrutura visual desta área já está separada do recebimento dos clientes para não misturar verba de mídia com receita da Auron. A automação e os lançamentos desta seção entram na próxima etapa.
-          </p>
-        </div>
+      {tab === 'processes' && (
+        <FinanceProcesses
+          data={panelData}
+          leads={leads}
+          meetings={meetings}
+          team={team}
+          profitGoal={profitGoal}
+        />
       )}
+
+      {tab === 'expenses' && <FinanceExpenses expenses={expenses} recurring={recurring} />}
 
       {clientModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4">
