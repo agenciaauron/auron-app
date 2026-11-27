@@ -1,19 +1,21 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarCheck, HandCoins, KanbanSquare, type LucideIcon } from 'lucide-react'
+import { CalendarCheck, CalendarDays, HandCoins, KanbanSquare, type LucideIcon } from 'lucide-react'
 import { CommissionsWorkspace } from '@/components/commissions-workspace'
+import { MeetingsCalendar } from '@/components/meetings-calendar'
 import { SdrLeadsWorkspace } from '@/components/sdr-leads-workspace'
 import { SdrNewLeadForm } from '@/components/sdr-new-lead-form'
 import { TodayWorkspace } from '@/components/today-workspace'
 import type { TeamMember } from '@/lib/crm'
 import type { Activity, HistoryItem, Lead, Stage } from '@/lib/lead-types'
 
-type Tab = 'hoje' | 'funil' | 'comissoes'
+type Tab = 'hoje' | 'funil' | 'calendario' | 'comissoes'
 
 const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: 'hoje', label: 'Hoje', icon: CalendarCheck },
   { key: 'funil', label: 'Funil', icon: KanbanSquare },
+  { key: 'calendario', label: 'Calendário', icon: CalendarDays },
   { key: 'comissoes', label: 'Comissões', icon: HandCoins },
 ]
 
@@ -92,6 +94,17 @@ export function SdrWorkspace({ userId, role, firstName, stages, leads, history, 
 
       {tab === 'funil' && (
         <SdrLeadsWorkspace
+          stages={stages}
+          leads={leads}
+          history={history}
+          activities={activities}
+          team={team}
+          role={role}
+        />
+      )}
+
+      {tab === 'calendario' && (
+        <MeetingsCalendar
           stages={stages}
           leads={leads}
           history={history}
